@@ -24,14 +24,14 @@ abstract class AndroidRustPlugin @Inject constructor(
         val androidComponents = project.getAndroidComponentsExtension()
         val tasksByBuildType = HashMap<String, ArrayList<TaskProvider<RustBuildTask>>>()
 
-        androidComponents.finalizeDsl { dsl ->
+        androidComponents.finalizeDsl { _ ->
             for ((moduleName, module) in extension.modules) {
                 try {
                     val modulePath = module.path
                     require(modulePath.exists()) {
                         "Rust module '$moduleName': path does not exist: $modulePath"
                     }
-                    
+
                     val cargoToml = File(modulePath, "Cargo.toml")
                     require(cargoToml.exists()) {
                         "Rust module '$moduleName': Cargo.toml not found at $modulePath"
@@ -41,12 +41,64 @@ abstract class AndroidRustPlugin @Inject constructor(
                 }
             }
 
+            // Register cargoClean tasks for each module
+            val cargoCleanTasks = mutableListOf<TaskProvider<CargoCleanTask>>()
+            val modulesWithAutoCargoClean = mutableListOf<String>()
+
+            for ((moduleName, module) in extension.modules) {
+                val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
+                val cargoCleanTaskName = "cargoClean${moduleNameCap}"
+
+                val cargoCleanTask = project.tasks.register(cargoCleanTaskName, CargoCleanTask::class.java) {
+                    this.rustBinaries.set(rustBinaries)
+                    this.rustProjectDirectory.set(module.path)
+                    this.moduleName.set(moduleName)
+                    this.description = "Runs cargo clean for Rust module '$moduleName'"
+                    this.group = "rust"
+                }
+                cargoCleanTasks.add(cargoCleanTask)
+
+                // Check if any build type has cargoClean enabled
+                val hasCargoCleanEnabled = module.buildTypes.values.any { it.cargoClean == true }
+                    || module.cargoClean == true
+                    || extension.cargoClean == true
+
+                if (hasCargoCleanEnabled) {
+                    modulesWithAutoCargoClean.add(moduleName)
+                }
+            }
+
+            // Register aggregate cargoClean task that runs all module cargo cleans
+            if (cargoCleanTasks.isNotEmpty()) {
+                project.tasks.register("cargoClean") {
+                    this.description = "Runs cargo clean for all Rust modules"
+                    this.group = "rust"
+                    this.dependsOn(cargoCleanTasks)
+                }
+            }
+
+            // Hook cargoClean to Gradle clean task for modules with cargoClean enabled
+            project.afterEvaluate {
+                val gradleCleanTask = project.tasks.findByName("clean")
+                if (gradleCleanTask != null && modulesWithAutoCargoClean.isNotEmpty()) {
+                    for ((moduleName, _) in extension.modules) {
+                        if (modulesWithAutoCargoClean.contains(moduleName)) {
+                            val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
+                            val cargoCleanTask = project.tasks.findByName("cargoClean${moduleNameCap}")
+                            if (cargoCleanTask != null) {
+                                gradleCleanTask.dependsOn(cargoCleanTask)
+                            }
+                        }
+                    }
+                }
+            }
+
             val allRustAbiSet = mutableSetOf<Abi>()
             val ndkDirectory = androidExtension.ndkDirectory
             val ndkVersion = SemanticVersion(androidExtension.ndkVersion)
             val extensionBuildDirectory = project.layout.buildDirectory.dir("intermediates/rust").get().asFile
 
-            for (buildType in dsl.buildTypes) {
+            for (buildType in androidExtension.buildTypes) {
                 val buildTypeNameCap = buildType.name.replaceFirstChar(Char::titlecase)
 
                 val variantBuildDirectory = File(extensionBuildDirectory, buildType.name)
@@ -85,7 +137,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                         val buildTask = project.tasks.register(buildTaskName, RustBuildTask::class.java) {
                             this.rustBinaries.set(rustBinaries)
                             this.abi.set(rustAbi)
-                            this.apiLevel.set(dsl.defaultConfig.minSdk ?: 21)
+                            this.apiLevel.set(androidExtension.defaultConfig.minSdk ?: 21)
                             this.ndkVersion.set(ndkVersion)
                             this.ndkDirectory.set(ndkDirectory)
                             this.rustProfile.set(rustConfiguration.profile)
@@ -107,7 +159,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                     }
                 }
 
-                dsl.sourceSets.findByName(buildType.name)?.jniLibs?.srcDir(variantJniLibsDirectory)
+                androidExtension.sourceSets.findByName(buildType.name)?.jniLibs?.srcDir(variantJniLibsDirectory)
             }
 
             val minimumSupportedRustVersion = SemanticVersion(extension.minimumSupportedRustVersion)
@@ -158,6 +210,7 @@ abstract class AndroidRustPlugin @Inject constructor(
             it.targets = Abi.values().mapTo(ArrayList(), Abi::rustName)
             it.runTests = null
             it.disableAbiOptimization = null
+            it.cargoClean = null
         }
 
         return configurations.asSequence()
@@ -175,6 +228,9 @@ abstract class AndroidRustPlugin @Inject constructor(
                 }
                 if (result.disableAbiOptimization == null) {
                     result.disableAbiOptimization = base.disableAbiOptimization
+                }
+                if (result.cargoClean == null) {
+                    result.cargoClean = base.cargoClean
                 }
                 result
             }

@@ -1,15 +1,14 @@
 plugins {
     `java-gradle-plugin`
     `kotlin-dsl`
-    id("com.gradle.plugin-publish") version "1.3.0"
+    id("com.gradle.plugin-publish") version "2.0.0"
 }
 
 val pluginId = "io.github.rodroidmods.android-rust"
 
 group = pluginId
-version = "0.7.0"
+version = "0.8.0"
 
-@Suppress("UnstableApiUsage")
 gradlePlugin {
     website = "https://github.com/rodroidmods/GradleAndroidRustPlugin"
     vcsUrl = "https://github.com/rodroidmods/GradleAndroidRustPlugin.git"
