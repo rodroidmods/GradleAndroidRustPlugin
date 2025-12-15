@@ -50,4 +50,6 @@ open class AndroidRustConfiguration {
     var runTests: Boolean? = null
 
     var disableAbiOptimization: Boolean? = null
+
+    var cargoClean: Boolean? = null
 }

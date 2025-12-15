@@ -2,7 +2,45 @@
 
 A Gradle plugin for building Rust libraries with Cargo for Android projects.
 
-## Version 0.7.0 - New Features
+## Version 0.8.0 - New Features
+
+### 🚀 New in 0.8.0
+
+#### **Cargo Clean Support**
+New `cargoClean` feature allows you to run `cargo clean` on your Rust modules:
+
+**Manual clean (always available):**
+```bash
+./gradlew cargoClean              # Clean all Rust modules
+./gradlew cargoCleanMyLib         # Clean specific module "mylib"
+```
+
+**Auto-clean with Gradle clean:**
+Enable `cargoClean` to automatically run `cargo clean` when you run `./gradlew clean`:
+
+```kotlin
+androidRust {
+    module("mylib") {
+        path = file("src/main/jni")
+        cargoClean = true  // Enable auto-clean for this module
+
+        buildType("release") {
+            cargoClean = true  // Or enable only for specific build types
+        }
+    }
+
+    // Or enable globally for all modules
+    cargoClean = true
+}
+```
+
+**New Tasks:**
+- `cargoClean` - Runs cargo clean for all Rust modules
+- `cargoClean<ModuleName>` - Runs cargo clean for a specific module
+
+---
+
+## Version 0.7.0 Features
 
 ### 🚀 Major Improvements
 
@@ -107,6 +145,7 @@ androidRust {
 | `profile` | Rust build profile | `"release"` |
 | `runTests` | Run `cargo test` before building | `null` (disabled) |
 | `disableAbiOptimization` | Disable IDE ABI injection | `null` (false) |
+| `cargoClean` | Run `cargo clean` with `./gradlew clean` | `null` (disabled) |
 
 ### Supported ABIs
 
@@ -170,11 +209,15 @@ The plugin creates tasks for each build type and ABI combination:
 - `clean<BuildType>RustJniLibs` - Clean Rust build artifacts
 - `test<Module>Rust` - Run Rust tests (if enabled)
 - `build<BuildType><Module>Rust[<ABI>]` - Build specific ABI
+- `cargoClean` - Run cargo clean for all Rust modules
+- `cargoClean<Module>` - Run cargo clean for a specific module
 
 Example tasks:
 - `buildReleaseMyLibRust[arm64-v8a]`
 - `buildDebugMyLibRust[x86_64]`
 - `testMyLibRust`
+- `cargoClean`
+- `cargoCleanMyLib`
 
 ### Gradle Build Cache
 
@@ -245,7 +288,7 @@ All existing configurations will continue to work.
 
 ### Note
 
-Is recomandded that for now to use latest version 0.7.0, as 0.6.0 have bugs and i fixed all of them.
+It is recommended to use the latest version 0.8.0, as previous versions have bugs that have been fixed.
 
 ### Credits
 
