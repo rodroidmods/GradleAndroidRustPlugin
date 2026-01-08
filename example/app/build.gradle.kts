@@ -22,21 +22,11 @@ android {
         compose = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.15"
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             proguardFiles("proguard-rules.pro")
-        }
-    }
-
-    sourceSets {
-        getByName("main") {
-            java.srcDir("src/main/jni")
         }
     }
 
@@ -53,8 +43,8 @@ android {
 androidRust {
     module("library") {
         path = file("src/main/jni")
-        //targets = listOf("arm64", "x86_64", "arm", "x86")
-        targets = listOf("arm64")
+        cargoClean = true
+        targets = listOf("arm64", "x86_64", "arm", "x86")
         buildType("release") {
             runTests = true
         }
