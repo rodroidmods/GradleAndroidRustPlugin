@@ -27,6 +27,8 @@ internal fun installRustComponentsIfNeeded(
     if (abiSet.isNotEmpty()) {
         installRustUp(execOperations, rustBinaries)
         installCargoNdk(execOperations, rustBinaries)
+        installClippy(execOperations, rustBinaries)
+        installRustfmt(execOperations, rustBinaries)
 
         val installedAbiSet = readRustUpInstalledTargets(execOperations, rustBinaries)
         for (abi in abiSet) {
@@ -97,12 +99,62 @@ private fun installCargoNdk(execOperations: ExecOperations, rustBinaries: RustBi
     }
 
     log("installing cargo-ndk")
-    
+
     execOperations.exec {
         standardOutput = NullOutputStream
         errorOutput = NullOutputStream
         executable(rustBinaries.cargo)
         args("install", "cargo-ndk")
+    }.assertNormalExitValue()
+}
+
+private fun installClippy(execOperations: ExecOperations, rustBinaries: RustBinaries) {
+    try {
+        val result = execOperations.exec {
+            standardOutput = NullOutputStream
+            errorOutput = NullOutputStream
+            executable(rustBinaries.cargo)
+            args("clippy", "--version")
+        }
+
+        if (result.exitValue == 0) {
+            return
+        }
+    } catch (_: Exception) {
+    }
+
+    log("installing clippy")
+
+    execOperations.exec {
+        standardOutput = NullOutputStream
+        errorOutput = NullOutputStream
+        executable(rustBinaries.rustup)
+        args("component", "add", "clippy")
+    }.assertNormalExitValue()
+}
+
+private fun installRustfmt(execOperations: ExecOperations, rustBinaries: RustBinaries) {
+    try {
+        val result = execOperations.exec {
+            standardOutput = NullOutputStream
+            errorOutput = NullOutputStream
+            executable(rustBinaries.cargo)
+            args("fmt", "--version")
+        }
+
+        if (result.exitValue == 0) {
+            return
+        }
+    } catch (_: Exception) {
+    }
+
+    log("installing rustfmt")
+
+    execOperations.exec {
+        standardOutput = NullOutputStream
+        errorOutput = NullOutputStream
+        executable(rustBinaries.rustup)
+        args("component", "add", "rustfmt")
     }.assertNormalExitValue()
 }
 

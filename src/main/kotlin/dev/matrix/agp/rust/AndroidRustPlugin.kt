@@ -93,6 +93,67 @@ abstract class AndroidRustPlugin @Inject constructor(
                 }
             }
 
+            val cargoClippyTasks = mutableListOf<TaskProvider<CargoClippyTask>>()
+            val cargoFmtTasks = mutableListOf<TaskProvider<CargoFmtTask>>()
+            val cargoFmtCheckTasks = mutableListOf<TaskProvider<CargoFmtCheckTask>>()
+
+            for ((moduleName, module) in extension.modules) {
+                val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
+                val rustConfiguration = mergeRustConfigurations(module, extension)
+
+                val cargoClippyTask = project.tasks.register("cargoClippy${moduleNameCap}", CargoClippyTask::class.java) {
+                    this.rustBinaries.set(rustBinaries)
+                    this.rustProjectDirectory.set(module.path)
+                    this.moduleName.set(moduleName)
+                    this.denyWarnings.set(rustConfiguration.clippyDenyWarnings ?: false)
+                    this.description = "Runs cargo clippy for Rust module '$moduleName'"
+                    this.group = "rust"
+                }
+                cargoClippyTasks.add(cargoClippyTask)
+
+                val cargoFmtTask = project.tasks.register("cargoFmt${moduleNameCap}", CargoFmtTask::class.java) {
+                    this.rustBinaries.set(rustBinaries)
+                    this.rustProjectDirectory.set(module.path)
+                    this.moduleName.set(moduleName)
+                    this.description = "Runs cargo fmt for Rust module '$moduleName'"
+                    this.group = "rust"
+                }
+                cargoFmtTasks.add(cargoFmtTask)
+
+                val cargoFmtCheckTask = project.tasks.register("cargoFmtCheck${moduleNameCap}", CargoFmtCheckTask::class.java) {
+                    this.rustBinaries.set(rustBinaries)
+                    this.rustProjectDirectory.set(module.path)
+                    this.moduleName.set(moduleName)
+                    this.description = "Checks cargo fmt for Rust module '$moduleName'"
+                    this.group = "rust"
+                }
+                cargoFmtCheckTasks.add(cargoFmtCheckTask)
+            }
+
+            if (cargoClippyTasks.isNotEmpty()) {
+                project.tasks.register("cargoClippy") {
+                    this.description = "Runs cargo clippy for all Rust modules"
+                    this.group = "rust"
+                    this.dependsOn(cargoClippyTasks)
+                }
+            }
+
+            if (cargoFmtTasks.isNotEmpty()) {
+                project.tasks.register("cargoFmt") {
+                    this.description = "Runs cargo fmt for all Rust modules"
+                    this.group = "rust"
+                    this.dependsOn(cargoFmtTasks)
+                }
+            }
+
+            if (cargoFmtCheckTasks.isNotEmpty()) {
+                project.tasks.register("cargoFmtCheck") {
+                    this.description = "Checks cargo fmt for all Rust modules"
+                    this.group = "rust"
+                    this.dependsOn(cargoFmtCheckTasks)
+                }
+            }
+
             val allRustAbiSet = mutableSetOf<Abi>()
             val ndkDirectory = androidExtension.ndkDirectory
             val ndkVersion = SemanticVersion(androidExtension.ndkVersion)
@@ -211,6 +272,7 @@ abstract class AndroidRustPlugin @Inject constructor(
             it.runTests = null
             it.disableAbiOptimization = null
             it.cargoClean = null
+            it.clippyDenyWarnings = null
         }
 
         return configurations.asSequence()
@@ -231,6 +293,9 @@ abstract class AndroidRustPlugin @Inject constructor(
                 }
                 if (result.cargoClean == null) {
                     result.cargoClean = base.cargoClean
+                }
+                if (result.clippyDenyWarnings == null) {
+                    result.clippyDenyWarnings = base.clippyDenyWarnings
                 }
                 result
             }

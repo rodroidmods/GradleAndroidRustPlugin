@@ -7,7 +7,7 @@ plugins {
 val pluginId = "io.github.rodroidmods.android-rust"
 
 group = pluginId
-version = "0.8.0"
+version = "0.9.0"
 
 gradlePlugin {
     website = "https://github.com/rodroidmods/GradleAndroidRustPlugin"

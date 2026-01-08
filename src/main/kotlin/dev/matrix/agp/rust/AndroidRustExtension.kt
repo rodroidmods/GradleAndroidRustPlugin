@@ -52,4 +52,6 @@ open class AndroidRustConfiguration {
     var disableAbiOptimization: Boolean? = null
 
     var cargoClean: Boolean? = null
+
+    var clippyDenyWarnings: Boolean? = null
 }

@@ -2,11 +2,64 @@
 
 A Gradle plugin for building Rust libraries with Cargo for Android projects.
 
-## Version 0.8.0 - New Features
+## Version 0.9.0 - New Features
 
-### 🚀 New in 0.8.0
+### 🚀 New in 0.9.0
 
-#### **Cargo Clean Support**
+#### **Cargo Clippy (Linting) Support**
+Run `cargo clippy` to lint your Rust code and catch common mistakes:
+
+```bash
+./gradlew cargoClippy              # Run clippy on all Rust modules
+./gradlew cargoClippyMyLib         # Run clippy on specific module
+```
+
+**Configure clippy strictness:**
+```kotlin
+androidRust {
+    module("mylib") {
+        path = file("src/main/jni")
+        clippyDenyWarnings = true  // Fail build on warnings (strict mode)
+
+        buildType("release") {
+            clippyDenyWarnings = true  // Only strict in release builds
+        }
+    }
+}
+```
+
+**Features:**
+- Auto-installs clippy if not present
+- Configurable per module and build type
+- Fail on warnings or report only mode
+- Full integration with Gradle task system
+
+#### **Cargo Format Support**
+Format and validate Rust code formatting:
+
+```bash
+./gradlew cargoFmt                 # Auto-format all Rust modules
+./gradlew cargoFmtMyLib            # Auto-format specific module
+./gradlew cargoFmtCheck            # Check formatting without modifying
+./gradlew cargoFmtCheckMyLib       # Check specific module
+```
+
+**Features:**
+- Auto-installs rustfmt if not present
+- Two modes: auto-fix and check-only
+- Perfect for CI/CD pipelines
+- Full integration with Gradle task system
+
+**New Tasks:**
+- `cargoClippy` / `cargoClippy<ModuleName>` - Run linter
+- `cargoFmt` / `cargoFmt<ModuleName>` - Auto-format code
+- `cargoFmtCheck` / `cargoFmtCheck<ModuleName>` - Check formatting
+
+---
+
+## Version 0.8.0 Features
+
+### 🚀 Cargo Clean Support
 New `cargoClean` feature allows you to run `cargo clean` on your Rust modules:
 
 **Manual clean (always available):**
@@ -112,22 +165,69 @@ androidRust {
 }
 ```
 
+#### Multiple Modules
+
+```kotlin
+androidRust {
+    minimumSupportedRustVersion = "1.70.0"
+
+    module("core") {
+        path = file("src/main/rust/core")
+        targets = listOf("arm64", "x86_64")
+
+        buildType("release") {
+            runTests = true
+            clippyDenyWarnings = true
+        }
+    }
+
+    module("audio") {
+        path = file("src/main/rust/audio")
+        targets = listOf("arm64", "x86_64", "arm", "x86")
+
+        buildType("release") {
+            runTests = true
+        }
+    }
+
+    module("network") {
+        path = file("src/main/rust/network")
+        targets = listOf("arm64", "x86_64")
+        cargoClean = true
+
+        buildType("debug") {
+            profile = "dev"
+        }
+
+        buildType("release") {
+            profile = "release"
+            clippyDenyWarnings = true
+        }
+    }
+}
+```
+
+Each module produces a separate `.so` library:
+- `libcore.so`
+- `libaudio.so`
+- `libnetwork.so`
+
 #### Advanced Options
 
 ```kotlin
 androidRust {
     minimumSupportedRustVersion = "1.70.0"
-    
+
     module("mylib") {
         path = file("../rust/mylib")
         targets = listOf("arm64")
         runTests = true
         disableAbiOptimization = false
-        
+
         buildType("debug") {
             profile = "dev"
         }
-        
+
         buildType("release") {
             profile = "release"
         }
@@ -146,6 +246,7 @@ androidRust {
 | `runTests` | Run `cargo test` before building | `null` (disabled) |
 | `disableAbiOptimization` | Disable IDE ABI injection | `null` (false) |
 | `cargoClean` | Run `cargo clean` with `./gradlew clean` | `null` (disabled) |
+| `clippyDenyWarnings` | Fail build on clippy warnings | `null` (false) |
 
 ### Supported ABIs
 
@@ -209,15 +310,19 @@ The plugin creates tasks for each build type and ABI combination:
 - `clean<BuildType>RustJniLibs` - Clean Rust build artifacts
 - `test<Module>Rust` - Run Rust tests (if enabled)
 - `build<BuildType><Module>Rust[<ABI>]` - Build specific ABI
-- `cargoClean` - Run cargo clean for all Rust modules
-- `cargoClean<Module>` - Run cargo clean for a specific module
+- `cargoClean` / `cargoClean<Module>` - Run cargo clean
+- `cargoClippy` / `cargoClippy<Module>` - Run cargo clippy linter
+- `cargoFmt` / `cargoFmt<Module>` - Auto-format Rust code
+- `cargoFmtCheck` / `cargoFmtCheck<Module>` - Check code formatting
 
 Example tasks:
 - `buildReleaseMyLibRust[arm64-v8a]`
 - `buildDebugMyLibRust[x86_64]`
 - `testMyLibRust`
-- `cargoClean`
-- `cargoCleanMyLib`
+- `cargoClean` / `cargoCleanMyLib`
+- `cargoClippy` / `cargoClippyMyLib`
+- `cargoFmt` / `cargoFmtMyLib`
+- `cargoFmtCheck` / `cargoFmtCheckMyLib`
 
 ### Gradle Build Cache
 
@@ -288,7 +393,7 @@ All existing configurations will continue to work.
 
 ### Note
 
-It is recommended to use the latest version 0.8.0, as previous versions have bugs that have been fixed.
+It is recommended to use the latest version 0.9.0, as previous versions have bugs that have been fixed.
 
 ### Credits
 
