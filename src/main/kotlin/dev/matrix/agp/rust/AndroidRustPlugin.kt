@@ -92,6 +92,32 @@ abstract class AndroidRustPlugin @Inject constructor(
                 }
             }
 
+            val minimumSupportedRustVersion = SemanticVersion(extension.minimumSupportedRustVersion)
+
+            val rustInstallBase = project.tasks.register("rustInstallBase", RustInstallTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.minimumSupportedRustVersion.set(minimumSupportedRustVersion)
+            }
+
+            val rustInstallClippy = project.tasks.register("rustInstallClippy", RustInstallTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.minimumSupportedRustVersion.set(minimumSupportedRustVersion)
+                this.installClippy.set(true)
+            }
+
+            val rustInstallRustfmt = project.tasks.register("rustInstallRustfmt", RustInstallTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.minimumSupportedRustVersion.set(minimumSupportedRustVersion)
+                this.installRustfmt.set(true)
+            }
+
+            val rustInstallBuild = project.tasks.register("rustInstallBuild", RustInstallTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.minimumSupportedRustVersion.set(minimumSupportedRustVersion)
+                this.installCargoNdk.set(true)
+                this.installTargets.set(true)
+            }
+
             val cargoClippyTasks = mutableListOf<TaskProvider<CargoClippyTask>>()
             val cargoFmtTasks = mutableListOf<TaskProvider<CargoFmtTask>>()
             val cargoFmtCheckTasks = mutableListOf<TaskProvider<CargoFmtCheckTask>>()
@@ -111,6 +137,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                     this.description = "Runs cargo clippy for Rust module '$moduleName'"
                     this.group = "rust"
                 }
+                cargoClippyTask.configure { dependsOn(rustInstallClippy) }
                 cargoClippyTasks.add(cargoClippyTask)
 
                 val cargoFmtTask = project.tasks.register("cargoFmt${moduleNameCap}", CargoFmtTask::class.java) {
@@ -120,6 +147,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                     this.description = "Runs cargo fmt for Rust module '$moduleName'"
                     this.group = "rust"
                 }
+                cargoFmtTask.configure { dependsOn(rustInstallRustfmt) }
                 cargoFmtTasks.add(cargoFmtTask)
 
                 val cargoFmtCheckTask = project.tasks.register("cargoFmtCheck${moduleNameCap}", CargoFmtCheckTask::class.java) {
@@ -129,6 +157,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                     this.description = "Checks cargo fmt for Rust module '$moduleName'"
                     this.group = "rust"
                 }
+                cargoFmtCheckTask.configure { dependsOn(rustInstallRustfmt) }
                 cargoFmtCheckTasks.add(cargoFmtCheckTask)
 
                 val cargoCheckTask = project.tasks.register("cargoCheck${moduleNameCap}", CargoCheckTask::class.java) {
@@ -138,6 +167,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                     this.description = "Runs cargo check for Rust module '$moduleName'"
                     this.group = "rust"
                 }
+                cargoCheckTask.configure { dependsOn(rustInstallBase) }
                 cargoCheckTasks.add(cargoCheckTask)
 
                 val cargoDocTask = project.tasks.register("cargoDoc${moduleNameCap}", CargoDocTask::class.java) {
@@ -147,6 +177,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                     this.description = "Runs cargo doc for Rust module '$moduleName'"
                     this.group = "rust"
                 }
+                cargoDocTask.configure { dependsOn(rustInstallBase) }
                 cargoDocTasks.add(cargoDocTask)
 
                 val cargoAddTask = project.tasks.register("cargoAdd${moduleNameCap}", CargoAddTask::class.java) {
@@ -156,6 +187,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                     this.description = "Runs cargo add for Rust module '$moduleName'"
                     this.group = "rust"
                 }
+                cargoAddTask.configure { dependsOn(rustInstallBase) }
                 cargoAddTasks.add(cargoAddTask)
             }
 
@@ -239,6 +271,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                                 this.cargoTargetDirectory.set(moduleBuildDirectory)
                             }.also { task ->
                                 task.configure { dependsOn(cleanTask) }
+                                task.configure { dependsOn(rustInstallBase) }
                             }
                         }
 
@@ -268,6 +301,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                             })
                             this.outputDirectory.set(variantJniLibsDirectory)
                         }
+                        buildTask.configure { dependsOn(rustInstallBuild) }
                         buildTask.configure {
                             mustRunAfter(testTask ?: cleanTask)
                         }
@@ -278,13 +312,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                 androidExtension.sourceSets.findByName(buildType.name)?.jniLibs?.directories?.add(variantJniLibsDirectory.path)
             }
 
-            val minimumSupportedRustVersion = SemanticVersion(extension.minimumSupportedRustVersion)
-            installRustComponentsIfNeeded(
-                execOperations,
-                minimumSupportedRustVersion,
-                allRustAbiSet,
-                rustBinaries
-            )
+            rustInstallBuild.configure { abiSet.set(allRustAbiSet) }
         }
 
         androidComponents.onVariants(androidComponents.selector().all()) { variant ->

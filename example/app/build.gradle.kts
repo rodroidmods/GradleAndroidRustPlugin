@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.android.rust)
 }
@@ -8,7 +7,7 @@ plugins {
 android {
     namespace = "dev.rodroid.rust"
     compileSdk = 36
-    ndkVersion = "25.2.9519653"
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "dev.rodroid.rust"

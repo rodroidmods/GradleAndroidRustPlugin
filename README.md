@@ -2,6 +2,20 @@
 
 A Gradle plugin for building Rust libraries with Cargo for Android projects.
 
+## Version 1.1.2 - New Features
+
+Fixed bugs in these commands:
+
+- `cargoFmt`
+- `cargoFmtCheck`
+- `cargoCheck`
+- `cargoDoc`
+- `cargoAdd`
+
+## Note
+
+Is recommanded to use this version, because is latest version and it have all bugs fixed and tested commands.
+
 ## Version 1.0.0 - New Features
 
 ### 🚀 New in 1.0.0
@@ -10,9 +24,12 @@ A Gradle plugin for building Rust libraries with Cargo for Android projects.
 Add dependencies to your Cargo.toml from Gradle:
 
 ```bash
-./gradlew cargoAdd --dependency serde@1
-./gradlew cargoAddMyLib --dependency serde@1
-./gradlew cargoAddMyLib --dependency serde@1 --args "--features derive"
+./gradlew cargoAdd --dependency serde
+./gradlew cargoAddLibrary --dependency serde
+./gradlew cargoAddLibrary --dependency serde --features derive
+./gradlew cargoAddLibrary --dependency serde --features derive,alloc
+./gradlew cargoAddLibrary --dependency serde --features "derive alloc"
+./gradlew cargoAddLibrary --dependency serde@1 --arg=--no-default-features
 ```
 
 #### **Cargo Check Support**
@@ -20,7 +37,7 @@ Fast syntax checking without a full build:
 
 ```bash
 ./gradlew cargoCheck
-./gradlew cargoCheckMyLib
+./gradlew cargoCheckLibrary
 ```
 
 #### **Cargo Doc Support**
@@ -28,7 +45,7 @@ Generate Rust documentation:
 
 ```bash
 ./gradlew cargoDoc
-./gradlew cargoDocMyLib
+./gradlew cargoDocLibrary
 ```
 
 **New Tasks:**
@@ -48,13 +65,13 @@ Run `cargo clippy` to lint your Rust code and catch common mistakes:
 
 ```bash
 ./gradlew cargoClippy              # Run clippy on all Rust modules
-./gradlew cargoClippyMyLib         # Run clippy on specific module
+./gradlew cargoClippyLibrary         # Run clippy on specific module
 ```
 
 **Configure clippy strictness:**
 ```kotlin
 androidRust {
-    module("mylib") {
+    module("library") {
         path = file("src/main/jni")
         clippyDenyWarnings = true  // Fail build on warnings (strict mode)
 
@@ -76,9 +93,9 @@ Format and validate Rust code formatting:
 
 ```bash
 ./gradlew cargoFmt                 # Auto-format all Rust modules
-./gradlew cargoFmtMyLib            # Auto-format specific module
+./gradlew cargoFmtLibrary            # Auto-format specific module
 ./gradlew cargoFmtCheck            # Check formatting without modifying
-./gradlew cargoFmtCheckMyLib       # Check specific module
+./gradlew cargoFmtCheckLibrary       # Check specific module
 ```
 
 **Features:**
@@ -102,7 +119,7 @@ New `cargoClean` feature allows you to run `cargo clean` on your Rust modules:
 **Manual clean (always available):**
 ```bash
 ./gradlew cargoClean              # Clean all Rust modules
-./gradlew cargoCleanMyLib         # Clean specific module "mylib"
+./gradlew cargoCleanLibrary         # Clean specific module "mylib"
 ```
 
 **Auto-clean with Gradle clean:**
@@ -110,7 +127,7 @@ Enable `cargoClean` to automatically run `cargo clean` when you run `./gradlew c
 
 ```kotlin
 androidRust {
-    module("mylib") {
+    module("library") {
         path = file("src/main/jni")
         cargoClean = true  // Enable auto-clean for this module
 
@@ -186,7 +203,7 @@ Pre-build validation to catch configuration errors early:
 
 ```kotlin
 androidRust {
-    module("mylib") {
+    module("library") {
         path = file("../rust/mylib")
         targets = listOf("arm", "arm64", "x86", "x86_64")
         
@@ -255,7 +272,7 @@ Each module produces a separate `.so` library:
 androidRust {
     minimumSupportedRustVersion = "1.70.0"
 
-    module("mylib") {
+    module("library") {
         path = file("../rust/mylib")
         targets = listOf("arm64")
         runTests = true
@@ -356,13 +373,13 @@ The plugin creates tasks for each build type and ABI combination:
 - `cargoFmtCheck` / `cargoFmtCheck<Module>` - Check code formatting
 
 Example tasks:
-- `buildReleaseMyLibRust[arm64-v8a]`
-- `buildDebugMyLibRust[x86_64]`
-- `testMyLibRust`
-- `cargoClean` / `cargoCleanMyLib`
-- `cargoClippy` / `cargoClippyMyLib`
-- `cargoFmt` / `cargoFmtMyLib`
-- `cargoFmtCheck` / `cargoFmtCheckMyLib`
+- `buildReleaseLibraryRust[arm64-v8a]`
+- `buildDebugLibraryRust[x86_64]`
+- `testLibraryRust`
+- `cargoClean` / `cargoCleanLibrary`
+- `cargoClippy` / `cargoClippyLibrary`
+- `cargoFmt` / `cargoFmtLibrary`
+- `cargoFmtCheck` / `cargoFmtCheckLibrary`
 
 ### Gradle Build Cache
 
@@ -407,7 +424,7 @@ Install NDK via Android Studio: Tools → SDK Manager → SDK Tools → NDK (Sid
 If you see "library not found" errors when running from Android Studio, set:
 ```kotlin
 androidRust {
-    module("mylib") {
+    module("library") {
         disableAbiOptimization = true
     }
 }

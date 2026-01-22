@@ -27,25 +27,39 @@ internal abstract class CargoAddTask : DefaultTask() {
     abstract val moduleName: Property<String>
 
     @get:Input
-    abstract val dependency: Property<String>
+    abstract val dependencySpec: Property<String>
+
+    @get:Input
+    abstract val featuresSpec: Property<String>
 
     @get:Input
     abstract val extraArgs: ListProperty<String>
 
     init {
-        dependency.convention("")
+        dependencySpec.convention("")
+        featuresSpec.convention("")
         extraArgs.convention(emptyList())
     }
 
     @Option(option = "dependency", description = "Cargo dependency spec, e.g. serde@1")
     fun setDependency(value: String) {
-        dependency.set(value)
+        dependencySpec.set(value)
     }
 
     @Option(option = "args", description = "Additional cargo add args, space-separated")
     fun setArgs(value: String) {
         val parsed = value.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-        extraArgs.set(parsed)
+        extraArgs.addAll(parsed)
+    }
+
+    @Option(option = "arg", description = "Single cargo add arg (repeatable)")
+    fun addArg(value: String) {
+        extraArgs.add(value)
+    }
+
+    @Option(option = "features", description = "Comma or space separated feature list")
+    fun setFeatures(value: String) {
+        featuresSpec.set(value)
     }
 
     @TaskAction
@@ -53,7 +67,12 @@ internal abstract class CargoAddTask : DefaultTask() {
         val rustBinaries = rustBinaries.get()
         val rustProjectDirectory = rustProjectDirectory.get()
         val moduleName = moduleName.get()
-        val dependency = dependency.get().trim()
+        val dependency = dependencySpec.get().trim()
+        val features = featuresSpec.get()
+            .trim()
+            .split(Regex("[,\\s]+"))
+            .filter { it.isNotBlank() }
+            .joinToString(",")
         val extraArgs = extraArgs.get()
 
         if (!rustProjectDirectory.exists()) {
@@ -81,6 +100,9 @@ internal abstract class CargoAddTask : DefaultTask() {
 
                 commandLine(rustBinaries.cargo)
                 args("add", dependency)
+                if (features.isNotEmpty()) {
+                    args("--features", features)
+                }
                 if (extraArgs.isNotEmpty()) {
                     args(extraArgs)
                 }

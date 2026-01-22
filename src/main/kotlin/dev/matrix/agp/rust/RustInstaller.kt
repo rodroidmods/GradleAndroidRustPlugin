@@ -10,37 +10,7 @@ import org.gradle.process.ExecOperations
 import java.io.ByteArrayOutputStream
 import java.io.File
 
-internal fun installRustComponentsIfNeeded(
-    execOperations: ExecOperations,
-    minimalVersion: SemanticVersion?,
-    abiSet: Collection<Abi>,
-    rustBinaries: RustBinaries,
-) {
-    if (minimalVersion != null && minimalVersion.isValid) {
-        val actualVersion = readRustCompilerVersion(execOperations, rustBinaries)
-        if (actualVersion < minimalVersion) {
-            installRustUp(execOperations, rustBinaries)
-            updateRust(execOperations, rustBinaries)
-        }
-    }
-
-    if (abiSet.isNotEmpty()) {
-        installRustUp(execOperations, rustBinaries)
-        installCargoNdk(execOperations, rustBinaries)
-        installClippy(execOperations, rustBinaries)
-        installRustfmt(execOperations, rustBinaries)
-
-        val installedAbiSet = readRustUpInstalledTargets(execOperations, rustBinaries)
-        for (abi in abiSet) {
-            if (installedAbiSet.contains(abi)) {
-                continue
-            }
-            installRustTarget(execOperations, abi, rustBinaries)
-        }
-    }
-}
-
-private fun installRustUp(execOperations: ExecOperations, rustBinaries: RustBinaries) {
+internal fun installRustUp(execOperations: ExecOperations, rustBinaries: RustBinaries) {
     try {
         val result = execOperations.exec {
             standardOutput = NullOutputStream
@@ -83,7 +53,7 @@ private fun installRustUp(execOperations: ExecOperations, rustBinaries: RustBina
     }
 }
 
-private fun installCargoNdk(execOperations: ExecOperations, rustBinaries: RustBinaries) {
+internal fun installCargoNdk(execOperations: ExecOperations, rustBinaries: RustBinaries) {
     try {
         val result = execOperations.exec {
             standardOutput = NullOutputStream
@@ -108,7 +78,7 @@ private fun installCargoNdk(execOperations: ExecOperations, rustBinaries: RustBi
     }.assertNormalExitValue()
 }
 
-private fun installClippy(execOperations: ExecOperations, rustBinaries: RustBinaries) {
+internal fun installClippy(execOperations: ExecOperations, rustBinaries: RustBinaries) {
     try {
         val result = execOperations.exec {
             standardOutput = NullOutputStream
@@ -133,7 +103,7 @@ private fun installClippy(execOperations: ExecOperations, rustBinaries: RustBina
     }.assertNormalExitValue()
 }
 
-private fun installRustfmt(execOperations: ExecOperations, rustBinaries: RustBinaries) {
+internal fun installRustfmt(execOperations: ExecOperations, rustBinaries: RustBinaries) {
     try {
         val result = execOperations.exec {
             standardOutput = NullOutputStream
@@ -158,7 +128,7 @@ private fun installRustfmt(execOperations: ExecOperations, rustBinaries: RustBin
     }.assertNormalExitValue()
 }
 
-private fun updateRust(execOperations: ExecOperations, rustBinaries: RustBinaries) {
+internal fun updateRust(execOperations: ExecOperations, rustBinaries: RustBinaries) {
     log("updating rust version")
 
     execOperations.exec {
@@ -169,7 +139,7 @@ private fun updateRust(execOperations: ExecOperations, rustBinaries: RustBinarie
     }.assertNormalExitValue()
 }
 
-private fun installRustTarget(execOperations: ExecOperations, abi: Abi, rustBinaries: RustBinaries) {
+internal fun installRustTarget(execOperations: ExecOperations, abi: Abi, rustBinaries: RustBinaries) {
     log("installing rust target $abi (${abi.rustTargetTriple})")
 
     execOperations.exec {
@@ -180,7 +150,7 @@ private fun installRustTarget(execOperations: ExecOperations, abi: Abi, rustBina
     }.assertNormalExitValue()
 }
 
-private fun readRustCompilerVersion(execOperations: ExecOperations, rustBinaries: RustBinaries): SemanticVersion {
+internal fun readRustCompilerVersion(execOperations: ExecOperations, rustBinaries: RustBinaries): SemanticVersion {
     val output = ByteArrayOutputStream()
     execOperations.exec {
         standardOutput = output
@@ -198,7 +168,7 @@ private fun readRustCompilerVersion(execOperations: ExecOperations, rustBinaries
     return SemanticVersion(match.groupValues[1])
 }
 
-private fun readRustUpInstalledTargets(execOperations: ExecOperations, rustBinaries: RustBinaries): Set<Abi> {
+internal fun readRustUpInstalledTargets(execOperations: ExecOperations, rustBinaries: RustBinaries): Set<Abi> {
     val output = ByteArrayOutputStream()
     execOperations.exec {
         standardOutput = output
