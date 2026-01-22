@@ -1,6 +1,5 @@
 package dev.matrix.agp.rust
 
-import com.android.build.gradle.internal.tasks.factory.dependsOn
 import dev.matrix.agp.rust.utils.Abi
 import dev.matrix.agp.rust.utils.RustBinaries
 import dev.matrix.agp.rust.utils.SemanticVersion
@@ -24,7 +23,7 @@ abstract class AndroidRustPlugin @Inject constructor(
         val androidComponents = project.getAndroidComponentsExtension()
         val tasksByBuildType = HashMap<String, ArrayList<TaskProvider<RustBuildTask>>>()
 
-        androidComponents.finalizeDsl { _ ->
+        androidComponents.finalizeDsl {
             for ((moduleName, module) in extension.modules) {
                 try {
                     val modulePath = module.path
@@ -96,6 +95,9 @@ abstract class AndroidRustPlugin @Inject constructor(
             val cargoClippyTasks = mutableListOf<TaskProvider<CargoClippyTask>>()
             val cargoFmtTasks = mutableListOf<TaskProvider<CargoFmtTask>>()
             val cargoFmtCheckTasks = mutableListOf<TaskProvider<CargoFmtCheckTask>>()
+            val cargoCheckTasks = mutableListOf<TaskProvider<CargoCheckTask>>()
+            val cargoDocTasks = mutableListOf<TaskProvider<CargoDocTask>>()
+            val cargoAddTasks = mutableListOf<TaskProvider<CargoAddTask>>()
 
             for ((moduleName, module) in extension.modules) {
                 val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
@@ -128,6 +130,33 @@ abstract class AndroidRustPlugin @Inject constructor(
                     this.group = "rust"
                 }
                 cargoFmtCheckTasks.add(cargoFmtCheckTask)
+
+                val cargoCheckTask = project.tasks.register("cargoCheck${moduleNameCap}", CargoCheckTask::class.java) {
+                    this.rustBinaries.set(rustBinaries)
+                    this.rustProjectDirectory.set(module.path)
+                    this.moduleName.set(moduleName)
+                    this.description = "Runs cargo check for Rust module '$moduleName'"
+                    this.group = "rust"
+                }
+                cargoCheckTasks.add(cargoCheckTask)
+
+                val cargoDocTask = project.tasks.register("cargoDoc${moduleNameCap}", CargoDocTask::class.java) {
+                    this.rustBinaries.set(rustBinaries)
+                    this.rustProjectDirectory.set(module.path)
+                    this.moduleName.set(moduleName)
+                    this.description = "Runs cargo doc for Rust module '$moduleName'"
+                    this.group = "rust"
+                }
+                cargoDocTasks.add(cargoDocTask)
+
+                val cargoAddTask = project.tasks.register("cargoAdd${moduleNameCap}", CargoAddTask::class.java) {
+                    this.rustBinaries.set(rustBinaries)
+                    this.rustProjectDirectory.set(module.path)
+                    this.moduleName.set(moduleName)
+                    this.description = "Runs cargo add for Rust module '$moduleName'"
+                    this.group = "rust"
+                }
+                cargoAddTasks.add(cargoAddTask)
             }
 
             if (cargoClippyTasks.isNotEmpty()) {
@@ -154,8 +183,32 @@ abstract class AndroidRustPlugin @Inject constructor(
                 }
             }
 
+            if (cargoCheckTasks.isNotEmpty()) {
+                project.tasks.register("cargoCheck") {
+                    this.description = "Runs cargo check for all Rust modules"
+                    this.group = "rust"
+                    this.dependsOn(cargoCheckTasks)
+                }
+            }
+
+            if (cargoDocTasks.isNotEmpty()) {
+                project.tasks.register("cargoDoc") {
+                    this.description = "Runs cargo doc for all Rust modules"
+                    this.group = "rust"
+                    this.dependsOn(cargoDocTasks)
+                }
+            }
+
+            if (cargoAddTasks.isNotEmpty()) {
+                project.tasks.register("cargoAdd", CargoAddAggregateTask::class.java) {
+                    this.description = "Runs cargo add for all Rust modules"
+                    this.group = "rust"
+                    this.dependsOn(cargoAddTasks)
+                }
+            }
+
             val allRustAbiSet = mutableSetOf<Abi>()
-            val ndkDirectory = androidExtension.ndkDirectory
+            val ndkDirectory = androidComponents.sdkComponents.ndkDirectory.get().asFile
             val ndkVersion = SemanticVersion(androidExtension.ndkVersion)
             val extensionBuildDirectory = project.layout.buildDirectory.dir("intermediates/rust").get().asFile
 
@@ -184,7 +237,9 @@ abstract class AndroidRustPlugin @Inject constructor(
                                 this.rustBinaries.set(rustBinaries)
                                 this.rustProjectDirectory.set(module.path)
                                 this.cargoTargetDirectory.set(moduleBuildDirectory)
-                            }.dependsOn(cleanTask)
+                            }.also { task ->
+                                task.configure { dependsOn(cleanTask) }
+                            }
                         }
 
                         else -> null
@@ -220,7 +275,7 @@ abstract class AndroidRustPlugin @Inject constructor(
                     }
                 }
 
-                androidExtension.sourceSets.findByName(buildType.name)?.jniLibs?.srcDir(variantJniLibsDirectory)
+                androidExtension.sourceSets.findByName(buildType.name)?.jniLibs?.directories?.add(variantJniLibsDirectory.path)
             }
 
             val minimumSupportedRustVersion = SemanticVersion(extension.minimumSupportedRustVersion)
@@ -232,7 +287,7 @@ abstract class AndroidRustPlugin @Inject constructor(
             )
         }
 
-        androidComponents.onVariants { variant ->
+        androidComponents.onVariants(androidComponents.selector().all()) { variant ->
             val tasks = tasksByBuildType[variant.buildType] ?: return@onVariants
             val variantName = variant.name.replaceFirstChar(Char::titlecase)
 

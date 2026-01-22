@@ -2,9 +2,46 @@
 
 A Gradle plugin for building Rust libraries with Cargo for Android projects.
 
-## Version 0.9.0 - New Features
+## Version 1.0.0 - New Features
 
-### 🚀 New in 0.9.0
+### 🚀 New in 1.0.0
+
+#### **Cargo Add Support**
+Add dependencies to your Cargo.toml from Gradle:
+
+```bash
+./gradlew cargoAdd --dependency serde@1
+./gradlew cargoAddMyLib --dependency serde@1
+./gradlew cargoAddMyLib --dependency serde@1 --args "--features derive"
+```
+
+#### **Cargo Check Support**
+Fast syntax checking without a full build:
+
+```bash
+./gradlew cargoCheck
+./gradlew cargoCheckMyLib
+```
+
+#### **Cargo Doc Support**
+Generate Rust documentation:
+
+```bash
+./gradlew cargoDoc
+./gradlew cargoDocMyLib
+```
+
+**New Tasks:**
+- `cargoAdd` / `cargoAdd<ModuleName>` - Add a Cargo dependency
+- `cargoCheck` / `cargoCheck<ModuleName>` - Run cargo check
+- `cargoDoc` / `cargoDoc<ModuleName>` - Generate docs
+
+#### **Support for AGP 9.0.0**
+Updated the AGP to latest version, also compose bom too and gradle version to 9.3.0 newely latest
+
+---
+
+## Version 0.9.0 Features
 
 #### **Cargo Clippy (Linting) Support**
 Run `cargo clippy` to lint your Rust code and catch common mistakes:
@@ -310,8 +347,11 @@ The plugin creates tasks for each build type and ABI combination:
 - `clean<BuildType>RustJniLibs` - Clean Rust build artifacts
 - `test<Module>Rust` - Run Rust tests (if enabled)
 - `build<BuildType><Module>Rust[<ABI>]` - Build specific ABI
+- `cargoAdd` / `cargoAdd<Module>` - Add a Cargo dependency
 - `cargoClean` / `cargoClean<Module>` - Run cargo clean
+- `cargoCheck` / `cargoCheck<Module>` - Run cargo check
 - `cargoClippy` / `cargoClippy<Module>` - Run cargo clippy linter
+- `cargoDoc` / `cargoDoc<Module>` - Generate docs
 - `cargoFmt` / `cargoFmt<Module>` - Auto-format Rust code
 - `cargoFmtCheck` / `cargoFmtCheck<Module>` - Check code formatting
 
@@ -393,7 +433,7 @@ All existing configurations will continue to work.
 
 ### Note
 
-It is recommended to use the latest version 0.9.0, as previous versions have bugs that have been fixed.
+It is recommended to use the latest version 1.0.0, as previous versions have bugs that have been fixed.
 
 ### Credits
 

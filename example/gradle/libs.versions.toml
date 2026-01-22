@@ -1,14 +1,14 @@
 [versions]
-agp = "8.13.0"
+agp = "9.0.0"
 kotlin = "2.3.0"
 coreKtx = "1.17.0"
-composeBom = "2025.12.01"
+composeBom = "2026.01.00"
 appcompat = "1.7.1"
 constraintlayout = "2.2.1"
 material = "1.13.0"
-activityCompose = "1.12.0"
+activityCompose = "1.12.2"
 lifecycleCompose = "2.10.0"
-android-rust = "0.9.0"
+android-rust = "1.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
