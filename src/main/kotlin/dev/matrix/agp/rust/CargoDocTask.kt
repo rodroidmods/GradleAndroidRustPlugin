@@ -48,7 +48,6 @@ internal abstract class CargoDocTask : DefaultTask() {
                 standardOutput = System.out
                 errorOutput = System.out
                 workingDir = rustProjectDirectory
-
                 commandLine(rustBinaries.cargo)
                 args("doc", "--no-deps")
             }.assertNormalExitValue()

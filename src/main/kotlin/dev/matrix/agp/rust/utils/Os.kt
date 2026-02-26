@@ -20,6 +20,20 @@ internal enum class Os {
                 else -> Unknown
             }
         }
+
+        fun hostDesktopAbi(): Abi? = when (current) {
+            Linux -> Abi.DesktopLinuxX64
+            Windows -> Abi.DesktopWindowsX64
+            MacOs -> {
+                val arch = System.getProperty("os.arch") ?: ""
+                if (arch == "aarch64" || arch == "arm64") {
+                    Abi.DesktopMacosArm64
+                } else {
+                    Abi.DesktopMacosX64
+                }
+            }
+            Unknown -> null
+        }
     }
 
     val isLinux: Boolean

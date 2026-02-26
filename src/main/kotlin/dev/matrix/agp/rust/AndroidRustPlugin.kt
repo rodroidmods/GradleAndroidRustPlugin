@@ -3,8 +3,13 @@ package dev.matrix.agp.rust
 import dev.matrix.agp.rust.utils.Abi
 import dev.matrix.agp.rust.utils.RustBinaries
 import dev.matrix.agp.rust.utils.SemanticVersion
+import dev.matrix.agp.rust.utils.findApplicationExtension
+import dev.matrix.agp.rust.utils.findLibraryExtension
 import dev.matrix.agp.rust.utils.getAndroidComponentsExtension
-import dev.matrix.agp.rust.utils.getAndroidExtension
+import dev.matrix.agp.rust.utils.getMinSdk
+import dev.matrix.agp.rust.utils.getNdkVersion
+import dev.matrix.agp.rust.utils.hasAndroidPlugin
+import dev.matrix.agp.rust.utils.log
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.tasks.TaskProvider
@@ -19,78 +24,9 @@ abstract class AndroidRustPlugin @Inject constructor(
     override fun apply(project: Project) {
         val rustBinaries = RustBinaries(project)
         val extension = project.extensions.create("androidRust", AndroidRustExtension::class.java)
-        val androidExtension = project.getAndroidExtension()
-        val androidComponents = project.getAndroidComponentsExtension()
-        val tasksByBuildType = HashMap<String, ArrayList<TaskProvider<RustBuildTask>>>()
 
-        androidComponents.finalizeDsl {
-            for ((moduleName, module) in extension.modules) {
-                try {
-                    val modulePath = module.path
-                    require(modulePath.exists()) {
-                        "Rust module '$moduleName': path does not exist: $modulePath"
-                    }
-
-                    val cargoToml = File(modulePath, "Cargo.toml")
-                    require(cargoToml.exists()) {
-                        "Rust module '$moduleName': Cargo.toml not found at $modulePath"
-                    }
-                } catch (e: UninitializedPropertyAccessException) {
-                    throw IllegalStateException("Rust module '$moduleName': path must be specified")
-                }
-            }
-
-            // Register cargoClean tasks for each module
-            val cargoCleanTasks = mutableListOf<TaskProvider<CargoCleanTask>>()
-            val modulesWithAutoCargoClean = mutableListOf<String>()
-
-            for ((moduleName, module) in extension.modules) {
-                val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
-                val cargoCleanTaskName = "cargoClean${moduleNameCap}"
-
-                val cargoCleanTask = project.tasks.register(cargoCleanTaskName, CargoCleanTask::class.java) {
-                    this.rustBinaries.set(rustBinaries)
-                    this.rustProjectDirectory.set(module.path)
-                    this.moduleName.set(moduleName)
-                    this.description = "Runs cargo clean for Rust module '$moduleName'"
-                    this.group = "rust"
-                }
-                cargoCleanTasks.add(cargoCleanTask)
-
-                // Check if any build type has cargoClean enabled
-                val hasCargoCleanEnabled = module.buildTypes.values.any { it.cargoClean == true }
-                    || module.cargoClean == true
-                    || extension.cargoClean == true
-
-                if (hasCargoCleanEnabled) {
-                    modulesWithAutoCargoClean.add(moduleName)
-                }
-            }
-
-            // Register aggregate cargoClean task that runs all module cargo cleans
-            if (cargoCleanTasks.isNotEmpty()) {
-                project.tasks.register("cargoClean") {
-                    this.description = "Runs cargo clean for all Rust modules"
-                    this.group = "rust"
-                    this.dependsOn(cargoCleanTasks)
-                }
-            }
-
-            // Hook cargoClean to Gradle clean task for modules with cargoClean enabled
-            project.afterEvaluate {
-                val gradleCleanTask = project.tasks.findByName("clean")
-                if (gradleCleanTask != null && modulesWithAutoCargoClean.isNotEmpty()) {
-                    for ((moduleName, _) in extension.modules) {
-                        if (modulesWithAutoCargoClean.contains(moduleName)) {
-                            val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
-                            val cargoCleanTask = project.tasks.findByName("cargoClean${moduleNameCap}")
-                            if (cargoCleanTask != null) {
-                                gradleCleanTask.dependsOn(cargoCleanTask)
-                            }
-                        }
-                    }
-                }
-            }
+        project.afterEvaluate {
+            validateModules(extension)
 
             val minimumSupportedRustVersion = SemanticVersion(extension.minimumSupportedRustVersion)
 
@@ -111,219 +47,478 @@ abstract class AndroidRustPlugin @Inject constructor(
                 this.installRustfmt.set(true)
             }
 
-            val rustInstallBuild = project.tasks.register("rustInstallBuild", RustInstallTask::class.java) {
-                this.rustBinaries.set(rustBinaries)
-                this.minimumSupportedRustVersion.set(minimumSupportedRustVersion)
-                this.installCargoNdk.set(true)
-                this.installTargets.set(true)
+            registerCargoUtilityTasks(project, extension, rustBinaries, rustInstallBase, rustInstallClippy, rustInstallRustfmt)
+            registerCargoCleanTasks(project, extension, rustBinaries)
+
+            val extensionBuildDirectory = project.layout.buildDirectory.dir("intermediates/rust").get().asFile
+
+            if (project.hasAndroidPlugin()) {
+                registerAndroidBuildTasks(project, extension, rustBinaries, minimumSupportedRustVersion, extensionBuildDirectory)
             }
 
-            val cargoClippyTasks = mutableListOf<TaskProvider<CargoClippyTask>>()
-            val cargoFmtTasks = mutableListOf<TaskProvider<CargoFmtTask>>()
-            val cargoFmtCheckTasks = mutableListOf<TaskProvider<CargoFmtCheckTask>>()
-            val cargoCheckTasks = mutableListOf<TaskProvider<CargoCheckTask>>()
-            val cargoDocTasks = mutableListOf<TaskProvider<CargoDocTask>>()
-            val cargoAddTasks = mutableListOf<TaskProvider<CargoAddTask>>()
+            registerDesktopBuildTasks(project, extension, rustBinaries, minimumSupportedRustVersion, extensionBuildDirectory)
+            registerIosBuildTasks(project, extension, rustBinaries, minimumSupportedRustVersion, extensionBuildDirectory)
+        }
+    }
+
+    private fun validateModules(extension: AndroidRustExtension) {
+        for ((moduleName, module) in extension.modules) {
+            try {
+                val modulePath = module.path
+                require(modulePath.exists()) {
+                    "Rust module '$moduleName': path does not exist: $modulePath"
+                }
+                val cargoToml = File(modulePath, "Cargo.toml")
+                require(cargoToml.exists()) {
+                    "Rust module '$moduleName': Cargo.toml not found at $modulePath"
+                }
+            } catch (e: UninitializedPropertyAccessException) {
+                throw IllegalStateException("Rust module '$moduleName': path must be specified")
+            }
+        }
+    }
+
+    private fun registerCargoUtilityTasks(
+        project: Project,
+        extension: AndroidRustExtension,
+        rustBinaries: RustBinaries,
+        rustInstallBase: TaskProvider<RustInstallTask>,
+        rustInstallClippy: TaskProvider<RustInstallTask>,
+        rustInstallRustfmt: TaskProvider<RustInstallTask>,
+    ) {
+        val cargoClippyTasks = mutableListOf<TaskProvider<CargoClippyTask>>()
+        val cargoFmtTasks = mutableListOf<TaskProvider<CargoFmtTask>>()
+        val cargoFmtCheckTasks = mutableListOf<TaskProvider<CargoFmtCheckTask>>()
+        val cargoCheckTasks = mutableListOf<TaskProvider<CargoCheckTask>>()
+        val cargoDocTasks = mutableListOf<TaskProvider<CargoDocTask>>()
+        val cargoAddTasks = mutableListOf<TaskProvider<CargoAddTask>>()
+
+        for ((moduleName, module) in extension.modules) {
+            val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
+            val rustConfiguration = mergeRustConfigurations(module, extension)
+
+            val cargoClippyTask = project.tasks.register("cargoClippy${moduleNameCap}", CargoClippyTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.rustProjectDirectory.set(module.path)
+                this.moduleName.set(moduleName)
+                this.denyWarnings.set(rustConfiguration.clippyDenyWarnings ?: false)
+                this.description = "Runs cargo clippy for Rust module '$moduleName'"
+                this.group = "rust"
+            }
+            cargoClippyTask.configure { dependsOn(rustInstallClippy) }
+            cargoClippyTasks.add(cargoClippyTask)
+
+            val cargoFmtTask = project.tasks.register("cargoFmt${moduleNameCap}", CargoFmtTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.rustProjectDirectory.set(module.path)
+                this.moduleName.set(moduleName)
+                this.description = "Runs cargo fmt for Rust module '$moduleName'"
+                this.group = "rust"
+            }
+            cargoFmtTask.configure { dependsOn(rustInstallRustfmt) }
+            cargoFmtTasks.add(cargoFmtTask)
+
+            val cargoFmtCheckTask = project.tasks.register("cargoFmtCheck${moduleNameCap}", CargoFmtCheckTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.rustProjectDirectory.set(module.path)
+                this.moduleName.set(moduleName)
+                this.description = "Checks cargo fmt for Rust module '$moduleName'"
+                this.group = "rust"
+            }
+            cargoFmtCheckTask.configure { dependsOn(rustInstallRustfmt) }
+            cargoFmtCheckTasks.add(cargoFmtCheckTask)
+
+            val cargoCheckTask = project.tasks.register("cargoCheck${moduleNameCap}", CargoCheckTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.rustProjectDirectory.set(module.path)
+                this.moduleName.set(moduleName)
+                this.description = "Runs cargo check for Rust module '$moduleName'"
+                this.group = "rust"
+            }
+            cargoCheckTask.configure { dependsOn(rustInstallBase) }
+            cargoCheckTasks.add(cargoCheckTask)
+
+            val cargoDocTask = project.tasks.register("cargoDoc${moduleNameCap}", CargoDocTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.rustProjectDirectory.set(module.path)
+                this.moduleName.set(moduleName)
+                this.description = "Runs cargo doc for Rust module '$moduleName'"
+                this.group = "rust"
+            }
+            cargoDocTask.configure { dependsOn(rustInstallBase) }
+            cargoDocTasks.add(cargoDocTask)
+
+            val cargoAddTask = project.tasks.register("cargoAdd${moduleNameCap}", CargoAddTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.rustProjectDirectory.set(module.path)
+                this.moduleName.set(moduleName)
+                this.description = "Runs cargo add for Rust module '$moduleName'"
+                this.group = "rust"
+            }
+            cargoAddTask.configure { dependsOn(rustInstallBase) }
+            cargoAddTasks.add(cargoAddTask)
+        }
+
+        registerAggregateTask(project, "cargoClippy", "Runs cargo clippy for all Rust modules", cargoClippyTasks)
+        registerAggregateTask(project, "cargoFmt", "Runs cargo fmt for all Rust modules", cargoFmtTasks)
+        registerAggregateTask(project, "cargoFmtCheck", "Checks cargo fmt for all Rust modules", cargoFmtCheckTasks)
+        registerAggregateTask(project, "cargoCheck", "Runs cargo check for all Rust modules", cargoCheckTasks)
+        registerAggregateTask(project, "cargoDoc", "Runs cargo doc for all Rust modules", cargoDocTasks)
+
+        if (cargoAddTasks.isNotEmpty()) {
+            project.tasks.register("cargoAdd", CargoAddAggregateTask::class.java) {
+                this.description = "Runs cargo add for all Rust modules"
+                this.group = "rust"
+                this.dependsOn(cargoAddTasks)
+            }
+        }
+    }
+
+    private fun registerCargoCleanTasks(
+        project: Project,
+        extension: AndroidRustExtension,
+        rustBinaries: RustBinaries,
+    ) {
+        val cargoCleanTasks = mutableListOf<TaskProvider<CargoCleanTask>>()
+        val modulesWithAutoCargoClean = mutableListOf<String>()
+
+        for ((moduleName, module) in extension.modules) {
+            val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
+
+            val cargoCleanTask = project.tasks.register("cargoClean${moduleNameCap}", CargoCleanTask::class.java) {
+                this.rustBinaries.set(rustBinaries)
+                this.rustProjectDirectory.set(module.path)
+                this.moduleName.set(moduleName)
+                this.description = "Runs cargo clean for Rust module '$moduleName'"
+                this.group = "rust"
+            }
+            cargoCleanTasks.add(cargoCleanTask)
+
+            val hasCargoCleanEnabled = module.buildTypes.values.any { it.cargoClean == true }
+                || module.cargoClean == true
+                || extension.cargoClean == true
+
+            if (hasCargoCleanEnabled) {
+                modulesWithAutoCargoClean.add(moduleName)
+            }
+        }
+
+        if (cargoCleanTasks.isNotEmpty()) {
+            project.tasks.register("cargoClean") {
+                this.description = "Runs cargo clean for all Rust modules"
+                this.group = "rust"
+                this.dependsOn(cargoCleanTasks)
+            }
+        }
+
+        val gradleCleanTask = project.tasks.findByName("clean")
+        if (gradleCleanTask != null && modulesWithAutoCargoClean.isNotEmpty()) {
+            for ((moduleName, _) in extension.modules) {
+                if (modulesWithAutoCargoClean.contains(moduleName)) {
+                    val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
+                    val cargoCleanTask = project.tasks.findByName("cargoClean${moduleNameCap}")
+                    if (cargoCleanTask != null) {
+                        gradleCleanTask.dependsOn(cargoCleanTask)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun registerAndroidBuildTasks(
+        project: Project,
+        extension: AndroidRustExtension,
+        rustBinaries: RustBinaries,
+        minimumSupportedRustVersion: SemanticVersion,
+        extensionBuildDirectory: File,
+    ) {
+        val androidComponents = project.getAndroidComponentsExtension()
+        val tasksByBuildType = HashMap<String, ArrayList<TaskProvider<RustBuildTask>>>()
+
+        val rustInstallBuild = project.tasks.register("rustInstallBuild", RustInstallTask::class.java) {
+            this.rustBinaries.set(rustBinaries)
+            this.minimumSupportedRustVersion.set(minimumSupportedRustVersion)
+            this.installCargoNdk.set(true)
+            this.installTargets.set(true)
+        }
+
+        val allAndroidAbis = mutableSetOf<Abi>()
+        val ndkDirectory = androidComponents.sdkComponents.ndkDirectory.get().asFile
+        val ndkVersion = SemanticVersion(project.getNdkVersion())
+        val minSdk = project.getMinSdk()
+
+        val buildTypeNames = resolveBuildTypeNames(project)
+
+        for (buildTypeName in buildTypeNames) {
+            val buildTypeNameCap = buildTypeName.replaceFirstChar(Char::titlecase)
+            val variantBuildDirectory = File(extensionBuildDirectory, buildTypeName)
+            val variantJniLibsDirectory = File(variantBuildDirectory, "jniLibs")
+
+            val cleanTask = project.tasks.register("clean${buildTypeNameCap}RustJniLibs", RustCleanTask::class.java) {
+                this.variantJniLibsDirectory.set(variantJniLibsDirectory)
+            }
 
             for ((moduleName, module) in extension.modules) {
                 val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
-                val rustConfiguration = mergeRustConfigurations(module, extension)
+                val moduleBuildDirectory = File(variantBuildDirectory, "lib_$moduleName")
 
-                val cargoClippyTask = project.tasks.register("cargoClippy${moduleNameCap}", CargoClippyTask::class.java) {
-                    this.rustBinaries.set(rustBinaries)
-                    this.rustProjectDirectory.set(module.path)
-                    this.moduleName.set(moduleName)
-                    this.denyWarnings.set(rustConfiguration.clippyDenyWarnings ?: false)
-                    this.description = "Runs cargo clippy for Rust module '$moduleName'"
-                    this.group = "rust"
-                }
-                cargoClippyTask.configure { dependsOn(rustInstallClippy) }
-                cargoClippyTasks.add(cargoClippyTask)
+                val rustBuildType = module.buildTypes[buildTypeName]
+                val rustConfiguration = mergeRustConfigurations(rustBuildType, module, extension)
 
-                val cargoFmtTask = project.tasks.register("cargoFmt${moduleNameCap}", CargoFmtTask::class.java) {
-                    this.rustBinaries.set(rustBinaries)
-                    this.rustProjectDirectory.set(module.path)
-                    this.moduleName.set(moduleName)
-                    this.description = "Runs cargo fmt for Rust module '$moduleName'"
-                    this.group = "rust"
-                }
-                cargoFmtTask.configure { dependsOn(rustInstallRustfmt) }
-                cargoFmtTasks.add(cargoFmtTask)
+                val allAbis = resolveAbiList(project, rustConfiguration)
+                val androidAbis = allAbis.filter { it.isAndroid }
+                if (androidAbis.isEmpty()) continue
 
-                val cargoFmtCheckTask = project.tasks.register("cargoFmtCheck${moduleNameCap}", CargoFmtCheckTask::class.java) {
-                    this.rustBinaries.set(rustBinaries)
-                    this.rustProjectDirectory.set(module.path)
-                    this.moduleName.set(moduleName)
-                    this.description = "Checks cargo fmt for Rust module '$moduleName'"
-                    this.group = "rust"
-                }
-                cargoFmtCheckTask.configure { dependsOn(rustInstallRustfmt) }
-                cargoFmtCheckTasks.add(cargoFmtCheckTask)
-
-                val cargoCheckTask = project.tasks.register("cargoCheck${moduleNameCap}", CargoCheckTask::class.java) {
-                    this.rustBinaries.set(rustBinaries)
-                    this.rustProjectDirectory.set(module.path)
-                    this.moduleName.set(moduleName)
-                    this.description = "Runs cargo check for Rust module '$moduleName'"
-                    this.group = "rust"
-                }
-                cargoCheckTask.configure { dependsOn(rustInstallBase) }
-                cargoCheckTasks.add(cargoCheckTask)
-
-                val cargoDocTask = project.tasks.register("cargoDoc${moduleNameCap}", CargoDocTask::class.java) {
-                    this.rustBinaries.set(rustBinaries)
-                    this.rustProjectDirectory.set(module.path)
-                    this.moduleName.set(moduleName)
-                    this.description = "Runs cargo doc for Rust module '$moduleName'"
-                    this.group = "rust"
-                }
-                cargoDocTask.configure { dependsOn(rustInstallBase) }
-                cargoDocTasks.add(cargoDocTask)
-
-                val cargoAddTask = project.tasks.register("cargoAdd${moduleNameCap}", CargoAddTask::class.java) {
-                    this.rustBinaries.set(rustBinaries)
-                    this.rustProjectDirectory.set(module.path)
-                    this.moduleName.set(moduleName)
-                    this.description = "Runs cargo add for Rust module '$moduleName'"
-                    this.group = "rust"
-                }
-                cargoAddTask.configure { dependsOn(rustInstallBase) }
-                cargoAddTasks.add(cargoAddTask)
-            }
-
-            if (cargoClippyTasks.isNotEmpty()) {
-                project.tasks.register("cargoClippy") {
-                    this.description = "Runs cargo clippy for all Rust modules"
-                    this.group = "rust"
-                    this.dependsOn(cargoClippyTasks)
-                }
-            }
-
-            if (cargoFmtTasks.isNotEmpty()) {
-                project.tasks.register("cargoFmt") {
-                    this.description = "Runs cargo fmt for all Rust modules"
-                    this.group = "rust"
-                    this.dependsOn(cargoFmtTasks)
-                }
-            }
-
-            if (cargoFmtCheckTasks.isNotEmpty()) {
-                project.tasks.register("cargoFmtCheck") {
-                    this.description = "Checks cargo fmt for all Rust modules"
-                    this.group = "rust"
-                    this.dependsOn(cargoFmtCheckTasks)
-                }
-            }
-
-            if (cargoCheckTasks.isNotEmpty()) {
-                project.tasks.register("cargoCheck") {
-                    this.description = "Runs cargo check for all Rust modules"
-                    this.group = "rust"
-                    this.dependsOn(cargoCheckTasks)
-                }
-            }
-
-            if (cargoDocTasks.isNotEmpty()) {
-                project.tasks.register("cargoDoc") {
-                    this.description = "Runs cargo doc for all Rust modules"
-                    this.group = "rust"
-                    this.dependsOn(cargoDocTasks)
-                }
-            }
-
-            if (cargoAddTasks.isNotEmpty()) {
-                project.tasks.register("cargoAdd", CargoAddAggregateTask::class.java) {
-                    this.description = "Runs cargo add for all Rust modules"
-                    this.group = "rust"
-                    this.dependsOn(cargoAddTasks)
-                }
-            }
-
-            val allRustAbiSet = mutableSetOf<Abi>()
-            val ndkDirectory = androidComponents.sdkComponents.ndkDirectory.get().asFile
-            val ndkVersion = SemanticVersion(androidExtension.ndkVersion)
-            val extensionBuildDirectory = project.layout.buildDirectory.dir("intermediates/rust").get().asFile
-
-            for (buildType in androidExtension.buildTypes) {
-                val buildTypeNameCap = buildType.name.replaceFirstChar(Char::titlecase)
-
-                val variantBuildDirectory = File(extensionBuildDirectory, buildType.name)
-                val variantJniLibsDirectory = File(variantBuildDirectory, "jniLibs")
-
-                val cleanTaskName = "clean${buildTypeNameCap}RustJniLibs"
-                val cleanTask = project.tasks.register(cleanTaskName, RustCleanTask::class.java) {
-                    this.variantJniLibsDirectory.set(variantJniLibsDirectory)
-                }
-
-                for ((moduleName, module) in extension.modules) {
-                    val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
-                    val moduleBuildDirectory = File(variantBuildDirectory, "lib_$moduleName")
-
-                    val rustBuildType = module.buildTypes[buildType.name]
-                    val rustConfiguration = mergeRustConfigurations(rustBuildType, module, extension)
-
-                    val testTask = when (rustConfiguration.runTests) {
-                        true -> {
-                            val testTaskName = "test${moduleNameCap}Rust"
-                            project.tasks.register(testTaskName, RustTestTask::class.java) {
-                                this.rustBinaries.set(rustBinaries)
-                                this.rustProjectDirectory.set(module.path)
-                                this.cargoTargetDirectory.set(moduleBuildDirectory)
-                            }.also { task ->
-                                task.configure { dependsOn(cleanTask) }
-                                task.configure { dependsOn(rustInstallBase) }
-                            }
-                        }
-
-                        else -> null
-                    }
-
-                    val rustAbiSet = resolveAbiList(project, rustConfiguration)
-                    allRustAbiSet.addAll(rustAbiSet)
-
-                    for (rustAbi in rustAbiSet) {
-                        val buildTaskName = "build${buildTypeNameCap}${moduleNameCap}Rust[${rustAbi.androidName}]"
-                        val buildTask = project.tasks.register(buildTaskName, RustBuildTask::class.java) {
+                val testTask = when (rustConfiguration.runTests) {
+                    true -> {
+                        project.tasks.register("test${moduleNameCap}Rust", RustTestTask::class.java) {
                             this.rustBinaries.set(rustBinaries)
-                            this.abi.set(rustAbi)
-                            this.apiLevel.set(androidExtension.defaultConfig.minSdk ?: 21)
-                            this.ndkVersion.set(ndkVersion)
-                            this.ndkDirectory.set(ndkDirectory)
-                            this.rustProfile.set(rustConfiguration.profile)
                             this.rustProjectDirectory.set(module.path)
                             this.cargoTargetDirectory.set(moduleBuildDirectory)
-                            this.variantJniLibsDirectory.set(variantJniLibsDirectory)
-                            this.cargoToml.set(project.layout.projectDirectory.file("${module.path.absolutePath}/Cargo.toml"))
-                            this.sourceFiles.from(project.fileTree(module.path) {
-                                include("**/*.rs")
-                                include("**/Cargo.toml")
-                                include("**/Cargo.lock")
-                            })
-                            this.outputDirectory.set(variantJniLibsDirectory)
+                        }.also { task ->
+                            task.configure { dependsOn(cleanTask) }
+                            task.configure { dependsOn(project.tasks.named("rustInstallBase")) }
                         }
-                        buildTask.configure { dependsOn(rustInstallBuild) }
-                        buildTask.configure {
-                            mustRunAfter(testTask ?: cleanTask)
-                        }
-                        tasksByBuildType.getOrPut(buildType.name, ::ArrayList).add(buildTask)
                     }
+                    else -> null
                 }
 
-                androidExtension.sourceSets.findByName(buildType.name)?.jniLibs?.directories?.add(variantJniLibsDirectory.path)
+                allAndroidAbis.addAll(androidAbis)
+
+                for (rustAbi in androidAbis) {
+                    val buildTaskName = "build${buildTypeNameCap}${moduleNameCap}Rust[${rustAbi.androidName}]"
+                    val buildTask = project.tasks.register(buildTaskName, RustBuildTask::class.java) {
+                        this.rustBinaries.set(rustBinaries)
+                        this.abi.set(rustAbi)
+                        this.apiLevel.set(minSdk)
+                        this.ndkVersion.set(ndkVersion)
+                        this.ndkDirectory.set(ndkDirectory)
+                        this.rustProfile.set(rustConfiguration.profile)
+                        this.rustProjectDirectory.set(module.path)
+                        this.cargoTargetDirectory.set(moduleBuildDirectory)
+                        this.variantJniLibsDirectory.set(variantJniLibsDirectory)
+                        this.cargoToml.set(project.layout.projectDirectory.file("${module.path.absolutePath}/Cargo.toml"))
+                        this.sourceFiles.from(project.fileTree(module.path) {
+                            include("**/*.rs")
+                            include("**/Cargo.toml")
+                            include("**/Cargo.lock")
+                        })
+                        this.outputDirectory.set(variantJniLibsDirectory)
+                    }
+                    buildTask.configure { dependsOn(rustInstallBuild) }
+                    buildTask.configure { mustRunAfter(testTask ?: cleanTask) }
+                    tasksByBuildType.getOrPut(buildTypeName, ::ArrayList).add(buildTask)
+                }
             }
 
-            rustInstallBuild.configure { abiSet.set(allRustAbiSet) }
+            addJniLibsSourceSet(project, buildTypeName, variantJniLibsDirectory)
         }
+
+        rustInstallBuild.configure { abiSet.set(allAndroidAbis) }
 
         androidComponents.onVariants(androidComponents.selector().all()) { variant ->
             val tasks = tasksByBuildType[variant.buildType] ?: return@onVariants
             val variantName = variant.name.replaceFirstChar(Char::titlecase)
 
-            project.afterEvaluate {
-                val parentTask = project.tasks.getByName("pre${variantName}Build")
-                for (task in tasks) {
-                    parentTask.dependsOn(task)
+            val parentTask = project.tasks.findByName("pre${variantName}Build") ?: return@onVariants
+            for (task in tasks) {
+                parentTask.dependsOn(task)
+            }
+        }
+    }
+
+    private fun registerDesktopBuildTasks(
+        project: Project,
+        extension: AndroidRustExtension,
+        rustBinaries: RustBinaries,
+        minimumSupportedRustVersion: SemanticVersion,
+        extensionBuildDirectory: File,
+    ) {
+        val allDesktopAbis = mutableSetOf<Abi>()
+        val desktopBuildTasks = mutableListOf<TaskProvider<DesktopBuildTask>>()
+
+        val rustInstallDesktop = project.tasks.register("rustInstallDesktop", RustInstallTask::class.java) {
+            this.rustBinaries.set(rustBinaries)
+            this.minimumSupportedRustVersion.set(minimumSupportedRustVersion)
+            this.installCargoNdk.set(false)
+            this.installTargets.set(true)
+        }
+
+        for ((moduleName, module) in extension.modules) {
+            val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
+            val rustConfiguration = mergeRustConfigurations(module, extension)
+
+            val allAbis = resolveAbiList(project, rustConfiguration)
+            val desktopAbis = allAbis.filter { it.isDesktop }
+            if (desktopAbis.isEmpty()) continue
+
+            allDesktopAbis.addAll(desktopAbis)
+
+            val variantBuildDirectory = File(extensionBuildDirectory, "desktop")
+            val moduleBuildDirectory = File(variantBuildDirectory, "lib_$moduleName")
+            val desktopResourcesDirectory = File(variantBuildDirectory, "resources")
+
+            for (desktopAbi in desktopAbis) {
+                val buildTaskName = "build${moduleNameCap}DesktopRust[${desktopAbi.rustName}]"
+                val outputDir = File(desktopResourcesDirectory, desktopAbi.jvmResourcePath)
+
+                val buildTask = project.tasks.register(buildTaskName, DesktopBuildTask::class.java) {
+                    this.rustBinaries.set(rustBinaries)
+                    this.abi.set(desktopAbi)
+                    this.rustProfile.set(rustConfiguration.profile)
+                    this.rustProjectDirectory.set(module.path)
+                    this.cargoTargetDirectory.set(moduleBuildDirectory)
+                    this.desktopResourcesDirectory.set(desktopResourcesDirectory)
+                    this.cargoToml.set(project.layout.projectDirectory.file("${module.path.absolutePath}/Cargo.toml"))
+                    this.sourceFiles.from(project.fileTree(module.path) {
+                        include("**/*.rs")
+                        include("**/Cargo.toml")
+                        include("**/Cargo.lock")
+                    })
+                    this.outputDirectory.set(outputDir)
+                    this.description = "Builds Rust module '$moduleName' for ${desktopAbi.rustName}"
+                    this.group = "rust"
                 }
+                buildTask.configure { dependsOn(rustInstallDesktop) }
+                desktopBuildTasks.add(buildTask)
+            }
+        }
+
+        rustInstallDesktop.configure { abiSet.set(allDesktopAbis) }
+
+        if (desktopBuildTasks.isNotEmpty()) {
+            project.tasks.register("buildDesktopRust") {
+                this.description = "Builds all Rust modules for desktop targets"
+                this.group = "rust"
+                this.dependsOn(desktopBuildTasks)
+            }
+
+            val processResources = project.tasks.findByName("processResources")
+                ?: project.tasks.findByName("jvmProcessResources")
+                ?: project.tasks.findByName("desktopProcessResources")
+            if (processResources != null) {
+                for (task in desktopBuildTasks) {
+                    processResources.dependsOn(task)
+                }
+            }
+
+            val desktopResourcesDir = File(extensionBuildDirectory, "desktop/resources")
+            try {
+                val sourceSets = project.extensions.getByName("sourceSets")
+                if (sourceSets is org.gradle.api.tasks.SourceSetContainer) {
+                    sourceSets.findByName("main")?.resources?.srcDir(desktopResourcesDir)
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun registerIosBuildTasks(
+        project: Project,
+        extension: AndroidRustExtension,
+        rustBinaries: RustBinaries,
+        minimumSupportedRustVersion: SemanticVersion,
+        extensionBuildDirectory: File,
+    ) {
+        val allIosAbis = mutableSetOf<Abi>()
+        val iosBuildTasks = mutableListOf<TaskProvider<IosBuildTask>>()
+
+        val rustInstallIos = project.tasks.register("rustInstallIos", RustInstallTask::class.java) {
+            this.rustBinaries.set(rustBinaries)
+            this.minimumSupportedRustVersion.set(minimumSupportedRustVersion)
+            this.installCargoNdk.set(false)
+            this.installTargets.set(true)
+        }
+
+        for ((moduleName, module) in extension.modules) {
+            val moduleNameCap = moduleName.replaceFirstChar(Char::titlecase)
+            val rustConfiguration = mergeRustConfigurations(module, extension)
+
+            val allAbis = resolveAbiList(project, rustConfiguration)
+            val iosAbis = allAbis.filter { it.isIos }
+            if (iosAbis.isEmpty()) continue
+
+            allIosAbis.addAll(iosAbis)
+
+            val variantBuildDirectory = File(extensionBuildDirectory, "ios")
+            val moduleBuildDirectory = File(variantBuildDirectory, "lib_$moduleName")
+            val iosOutputDirectory = File(variantBuildDirectory, "output")
+
+            for (iosAbi in iosAbis) {
+                val buildTaskName = "build${moduleNameCap}IosRust[${iosAbi.rustName}]"
+                val outputDir = File(iosOutputDirectory, iosAbi.rustName)
+
+                val buildTask = project.tasks.register(buildTaskName, IosBuildTask::class.java) {
+                    this.rustBinaries.set(rustBinaries)
+                    this.abi.set(iosAbi)
+                    this.rustProfile.set(rustConfiguration.profile)
+                    this.rustProjectDirectory.set(module.path)
+                    this.cargoTargetDirectory.set(moduleBuildDirectory)
+                    this.iosOutputDirectory.set(iosOutputDirectory)
+                    this.cargoToml.set(project.layout.projectDirectory.file("${module.path.absolutePath}/Cargo.toml"))
+                    this.sourceFiles.from(project.fileTree(module.path) {
+                        include("**/*.rs")
+                        include("**/Cargo.toml")
+                        include("**/Cargo.lock")
+                    })
+                    this.outputDirectory.set(outputDir)
+                    this.description = "Builds Rust module '$moduleName' for ${iosAbi.rustName}"
+                    this.group = "rust"
+                }
+                buildTask.configure { dependsOn(rustInstallIos) }
+                iosBuildTasks.add(buildTask)
+            }
+        }
+
+        rustInstallIos.configure { abiSet.set(allIosAbis) }
+
+        if (iosBuildTasks.isNotEmpty()) {
+            project.tasks.register("buildIosRust") {
+                this.description = "Builds all Rust modules for iOS targets"
+                this.group = "rust"
+                this.dependsOn(iosBuildTasks)
+            }
+        }
+    }
+
+    private fun resolveBuildTypeNames(project: Project): List<String> {
+        val appExtension = project.findApplicationExtension()
+        if (appExtension != null) {
+            return appExtension.buildTypes.map { it.name }
+        }
+
+        val libExtension = project.findLibraryExtension()
+        if (libExtension != null) {
+            return libExtension.buildTypes.map { it.name }
+        }
+
+        return listOf("debug", "release")
+    }
+
+    private fun addJniLibsSourceSet(project: Project, buildTypeName: String, jniLibsDir: File) {
+        val appExtension = project.findApplicationExtension()
+        if (appExtension != null) {
+            appExtension.sourceSets.findByName(buildTypeName)?.jniLibs?.directories?.add(jniLibsDir.path)
+            return
+        }
+
+        val libExtension = project.findLibraryExtension()
+        if (libExtension != null) {
+            libExtension.sourceSets.findByName(buildTypeName)?.jniLibs?.directories?.add(jniLibsDir.path)
+        }
+    }
+
+    private fun <T : org.gradle.api.Task> registerAggregateTask(
+        project: Project,
+        name: String,
+        description: String,
+        tasks: List<TaskProvider<T>>,
+    ) {
+        if (tasks.isNotEmpty()) {
+            project.tasks.register(name) {
+                this.description = description
+                this.group = "rust"
+                this.dependsOn(tasks)
             }
         }
     }
@@ -340,18 +535,23 @@ abstract class AndroidRustPlugin @Inject constructor(
             return requestedAbi
         }
 
-        val intersectionAbi = requestedAbi.intersect(injectedAbi)
-        check(intersectionAbi.isNotEmpty()) {
-            "ABIs requested by IDE ($injectedAbi) are not supported by the build config (${config.targets})"
+        val androidAbis = requestedAbi.filter { it.isAndroid }.toSet()
+        val nonAndroidAbis = requestedAbi.filter { !it.isAndroid }
+
+        val intersectionAbi = androidAbis.intersect(injectedAbi)
+        if (androidAbis.isNotEmpty()) {
+            check(intersectionAbi.isNotEmpty()) {
+                "ABIs requested by IDE ($injectedAbi) are not supported by the build config (${config.targets})"
+            }
         }
 
-        return intersectionAbi.toList()
+        return intersectionAbi.toList() + nonAndroidAbis
     }
 
     private fun mergeRustConfigurations(vararg configurations: AndroidRustConfiguration?): AndroidRustConfiguration {
         val defaultConfiguration = AndroidRustConfiguration().also {
             it.profile = "release"
-            it.targets = Abi.values().mapTo(ArrayList(), Abi::rustName)
+            it.targets = Abi.androidEntries().map(Abi::rustName)
             it.runTests = null
             it.disableAbiOptimization = null
             it.cargoClean = null

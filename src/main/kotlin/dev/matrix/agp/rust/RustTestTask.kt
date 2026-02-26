@@ -32,11 +32,8 @@ internal abstract class RustTestTask : DefaultTask() {
             standardOutput = System.out
             errorOutput = System.out
             workingDir = rustProjectDirectory
-
             environment("CARGO_TARGET_DIR", cargoTargetDirectory.absolutePath)
-
             commandLine(rustBinaries.cargo)
-
             args("test")
         }.assertNormalExitValue()
     }

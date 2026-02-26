@@ -52,10 +52,8 @@ internal abstract class CargoClippyTask : DefaultTask() {
                 standardOutput = System.out
                 errorOutput = System.out
                 workingDir = rustProjectDirectory
-
                 commandLine(rustBinaries.cargo)
                 args("clippy", "--all-targets", "--all-features")
-
                 if (denyWarnings) {
                     args("--", "-D", "warnings")
                 }

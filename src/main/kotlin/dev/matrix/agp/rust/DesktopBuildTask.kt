@@ -2,7 +2,6 @@ package dev.matrix.agp.rust
 
 import dev.matrix.agp.rust.utils.Abi
 import dev.matrix.agp.rust.utils.RustBinaries
-import dev.matrix.agp.rust.utils.SemanticVersion
 import dev.matrix.agp.rust.utils.log
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
@@ -21,7 +20,7 @@ import org.gradle.process.ExecOperations
 import java.io.File
 import javax.inject.Inject
 
-internal abstract class RustBuildTask : DefaultTask() {
+internal abstract class DesktopBuildTask : DefaultTask() {
     @get:Inject
     abstract val execOperations: ExecOperations
 
@@ -30,15 +29,6 @@ internal abstract class RustBuildTask : DefaultTask() {
 
     @get:Input
     abstract val abi: Property<Abi>
-
-    @get:Input
-    abstract val apiLevel: Property<Int>
-
-    @get:Input
-    abstract val ndkVersion: Property<SemanticVersion>
-
-    @get:Input
-    abstract val ndkDirectory: Property<File>
 
     @get:Input
     abstract val rustProfile: Property<String>
@@ -50,16 +40,16 @@ internal abstract class RustBuildTask : DefaultTask() {
     abstract val cargoTargetDirectory: Property<File>
 
     @get:Input
-    abstract val variantJniLibsDirectory: Property<File>
+    abstract val desktopResourcesDirectory: Property<File>
 
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val sourceFiles: ConfigurableFileCollection
-    
+
     @get:InputFile
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val cargoToml: RegularFileProperty
-    
+
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
 
@@ -67,29 +57,21 @@ internal abstract class RustBuildTask : DefaultTask() {
     fun taskAction() {
         val rustBinaries = rustBinaries.get()
         val abi = abi.get()
-        val apiLevel = apiLevel.get()
-        val ndkDirectory = ndkDirectory.get()
         val rustProfile = rustProfile.get()
         val rustProjectDirectory = rustProjectDirectory.get()
-        val variantJniLibsDirectory = variantJniLibsDirectory.get()
+        val cargoTargetDirectory = cargoTargetDirectory.get()
+        val desktopResourcesDirectory = desktopResourcesDirectory.get()
 
         require(rustProjectDirectory.exists()) {
             "Rust project directory not found: $rustProjectDirectory"
         }
-        
+
         val cargoTomlFile = File(rustProjectDirectory, "Cargo.toml")
         require(cargoTomlFile.exists()) {
             "Cargo.toml not found in: $rustProjectDirectory"
         }
-        
-        require(ndkDirectory.exists()) {
-            """
-            Android NDK not found at: $ndkDirectory
-            Please install NDK via Android Studio SDK Manager or set android.ndkDirectory
-            """.trimIndent()
-        }
 
-        log("Building ${cargoTomlFile.parentFile.name} for ${abi.androidName} (API $apiLevel)")
+        log("Building ${cargoTomlFile.parentFile.name} for ${abi.rustName} (${abi.rustTargetTriple})")
 
         try {
             execOperations.exec {
@@ -97,15 +79,12 @@ internal abstract class RustBuildTask : DefaultTask() {
                 errorOutput = System.out
                 workingDir = rustProjectDirectory
 
-                environment("ANDROID_NDK_HOME", ndkDirectory.absolutePath)
+                environment("CARGO_TARGET_DIR", cargoTargetDirectory.absolutePath)
 
                 commandLine(rustBinaries.cargo)
-                args("ndk")
-                args("-o", variantJniLibsDirectory.absolutePath)
-                args("--platform", apiLevel)
-                args("-t", abi.androidName)
                 args("build")
-                
+                args("--target", abi.rustTargetTriple)
+
                 if (rustProfile.isNotEmpty() && rustProfile != "dev") {
                     args("--profile", rustProfile)
                 }
@@ -113,19 +92,56 @@ internal abstract class RustBuildTask : DefaultTask() {
         } catch (e: Exception) {
             throw GradleException(
                 """
-                Rust build failed for ${abi.androidName}
+                Desktop Rust build failed for ${abi.rustName} (${abi.rustTargetTriple})
                 
                 Possible solutions:
                 - Ensure your Cargo.toml has [lib] crate-type = ["cdylib"]
-                - Ensure NDK version ${ndkVersion.get()} is properly installed
-                - Ensure cargo-ndk is installed: cargo install cargo-ndk
-                - Set ANDROID_NDK_HOME environment variable to: $ndkDirectory
-                - Try running: cargo ndk -t ${abi.androidName} build
+                - Install the target: rustup target add ${abi.rustTargetTriple}
+                - Try running manually: cargo build --target ${abi.rustTargetTriple}
                 
                 Error: ${e.message}
                 """.trimIndent(),
                 e
             )
+        }
+
+        copyLibraryToResources(abi, rustProfile, cargoTargetDirectory, desktopResourcesDirectory)
+    }
+
+    private fun copyLibraryToResources(
+        abi: Abi,
+        rustProfile: String,
+        cargoTargetDirectory: File,
+        desktopResourcesDirectory: File,
+    ) {
+        val profileDir = when (rustProfile) {
+            "dev", "" -> "debug"
+            else -> rustProfile
+        }
+
+        val targetOutputDir = File(cargoTargetDirectory, "${abi.rustTargetTriple}/$profileDir")
+        if (!targetOutputDir.exists()) {
+            log("Warning: build output directory not found: $targetOutputDir")
+            return
+        }
+
+        val resourceDir = File(desktopResourcesDirectory, abi.jvmResourcePath)
+        resourceDir.mkdirs()
+
+        val libraryFiles = targetOutputDir.listFiles { file ->
+            file.isFile && file.name.endsWith(abi.libraryExtension) &&
+                !file.name.endsWith(".d") &&
+                (file.name.startsWith("lib") || abi.libraryExtension == ".dll")
+        } ?: emptyArray()
+
+        for (libraryFile in libraryFiles) {
+            val destFile = File(resourceDir, libraryFile.name)
+            libraryFile.copyTo(destFile, overwrite = true)
+            log("Copied ${libraryFile.name} → ${resourceDir.path}")
+        }
+
+        if (libraryFiles.isEmpty()) {
+            log("Warning: no ${abi.libraryExtension} libraries found in $targetOutputDir")
         }
     }
 }

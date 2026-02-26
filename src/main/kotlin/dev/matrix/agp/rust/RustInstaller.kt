@@ -18,14 +18,13 @@ internal fun installRustUp(execOperations: ExecOperations, rustBinaries: RustBin
             executable(rustBinaries.rustup)
             args("-V")
         }
-
         if (result.exitValue == 0) {
             return
         }
     } catch (_: Exception) {
     }
 
-    log("installing rustup")
+    log("Installing rustup")
 
     when (Os.current.isWindows) {
         true -> {
@@ -61,14 +60,13 @@ internal fun installCargoNdk(execOperations: ExecOperations, rustBinaries: RustB
             executable(rustBinaries.cargoNdk)
             args("--version")
         }
-
         if (result.exitValue == 0) {
             return
         }
     } catch (_: Exception) {
     }
 
-    log("installing cargo-ndk")
+    log("Installing cargo-ndk")
 
     execOperations.exec {
         standardOutput = NullOutputStream
@@ -86,14 +84,13 @@ internal fun installClippy(execOperations: ExecOperations, rustBinaries: RustBin
             executable(rustBinaries.cargo)
             args("clippy", "--version")
         }
-
         if (result.exitValue == 0) {
             return
         }
     } catch (_: Exception) {
     }
 
-    log("installing clippy")
+    log("Installing clippy")
 
     execOperations.exec {
         standardOutput = NullOutputStream
@@ -111,14 +108,13 @@ internal fun installRustfmt(execOperations: ExecOperations, rustBinaries: RustBi
             executable(rustBinaries.cargo)
             args("fmt", "--version")
         }
-
         if (result.exitValue == 0) {
             return
         }
     } catch (_: Exception) {
     }
 
-    log("installing rustfmt")
+    log("Installing rustfmt")
 
     execOperations.exec {
         standardOutput = NullOutputStream
@@ -129,7 +125,7 @@ internal fun installRustfmt(execOperations: ExecOperations, rustBinaries: RustBi
 }
 
 internal fun updateRust(execOperations: ExecOperations, rustBinaries: RustBinaries) {
-    log("updating rust version")
+    log("Updating rust version")
 
     execOperations.exec {
         standardOutput = NullOutputStream
@@ -140,7 +136,7 @@ internal fun updateRust(execOperations: ExecOperations, rustBinaries: RustBinari
 }
 
 internal fun installRustTarget(execOperations: ExecOperations, abi: Abi, rustBinaries: RustBinaries) {
-    log("installing rust target $abi (${abi.rustTargetTriple})")
+    log("Installing rust target $abi (${abi.rustTargetTriple})")
 
     execOperations.exec {
         standardOutput = NullOutputStream
@@ -162,7 +158,7 @@ internal fun readRustCompilerVersion(execOperations: ExecOperations, rustBinarie
     val outputText = String(output.toByteArray())
     val regex = Regex("^rustc (\\d+\\.\\d+\\.\\d+)(-nightly)? .*$", RegexOption.DOT_MATCHES_ALL)
     val match = checkNotNull(regex.matchEntire(outputText)) {
-        "failed to parse rust compiler version: $outputText"
+        "Failed to parse rust compiler version: $outputText"
     }
 
     return SemanticVersion(match.groupValues[1])
@@ -180,7 +176,7 @@ internal fun readRustUpInstalledTargets(execOperations: ExecOperations, rustBina
     val regex = Regex("^(\\S+) \\(installed\\)$", RegexOption.MULTILINE)
     return regex.findAll(String(output.toByteArray()))
         .mapNotNull { target ->
-            Abi.values().find { it.rustTargetTriple == target.groupValues[1] }
+            Abi.entries.find { it.rustTargetTriple == target.groupValues[1] }
         }
         .toSet()
 }

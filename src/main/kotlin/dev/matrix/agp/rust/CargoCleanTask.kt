@@ -47,7 +47,6 @@ internal abstract class CargoCleanTask : DefaultTask() {
                 standardOutput = System.out
                 errorOutput = System.out
                 workingDir = rustProjectDirectory
-
                 commandLine(rustBinaries.cargo)
                 args("clean")
             }.assertNormalExitValue()

@@ -31,13 +31,13 @@ internal fun SemanticVersion(version: String?): SemanticVersion {
 
     val parts = version.split(".")
     val major = requireNotNull(parts.getOrNull(0)?.toIntOrNull()) {
-        "failed to parse 'major' part of the version from '$version'"
+        "Failed to parse 'major' part of the version from '$version'"
     }
     val minor = requireNotNull(parts.getOrNull(1)?.toIntOrNull()) {
-        "failed to parse 'minor' part of the version from '$version'"
+        "Failed to parse 'minor' part of the version from '$version'"
     }
     val patch = requireNotNull(parts.getOrNull(2)?.toIntOrNull()) {
-        "failed to parse 'patch' part of the version from '$version'"
+        "Failed to parse 'patch' part of the version from '$version'"
     }
 
     return SemanticVersion(

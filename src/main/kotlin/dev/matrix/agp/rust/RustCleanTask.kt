@@ -13,7 +13,6 @@ internal abstract class RustCleanTask : DefaultTask() {
     @TaskAction
     fun taskAction() {
         val variantJniLibsDirectory = variantJniLibsDirectory.get()
-
         project.delete {
             delete(variantJniLibsDirectory)
         }

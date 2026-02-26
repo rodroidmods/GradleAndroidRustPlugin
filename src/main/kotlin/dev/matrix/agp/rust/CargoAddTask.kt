@@ -97,7 +97,6 @@ internal abstract class CargoAddTask : DefaultTask() {
                 standardOutput = System.out
                 errorOutput = System.out
                 workingDir = rustProjectDirectory
-
                 commandLine(rustBinaries.cargo)
                 args("add", dependency)
                 if (features.isNotEmpty()) {

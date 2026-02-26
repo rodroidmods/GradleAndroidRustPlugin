@@ -48,7 +48,6 @@ internal abstract class CargoFmtCheckTask : DefaultTask() {
                 standardOutput = System.out
                 errorOutput = System.out
                 workingDir = rustProjectDirectory
-
                 commandLine(rustBinaries.cargo)
                 args("fmt", "--all", "--check")
             }.assertNormalExitValue()

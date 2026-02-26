@@ -7,7 +7,7 @@ plugins {
 val pluginId = "io.github.rodroidmods.android-rust"
 
 group = pluginId
-version = "1.1.2"
+version = "2.0.0"
 
 gradlePlugin {
     website = "https://github.com/rodroidmods/GradleAndroidRustPlugin"
@@ -17,9 +17,9 @@ gradlePlugin {
         create("AndroidRust") {
             id = pluginId
             implementationClass = "dev.matrix.agp.rust.AndroidRustPlugin"
-            displayName = "Plugin for building Rust with Cargo in Android projects"
-            description = "This plugin helps with building Rust JNI libraries with Cargo for use in Android projects."
-            tags.set(listOf("android", "rust", "jni"))
+            displayName = "Plugin for building Rust with Cargo in Android, Desktop & iOS projects"
+            description = "This plugin helps with building Rust libraries with Cargo for Android, Desktop JVM, and iOS targets (KMP support)."
+            tags.set(listOf("android", "rust", "jni", "kmp", "multiplatform", "ios", "desktop"))
         }
     }
 }
