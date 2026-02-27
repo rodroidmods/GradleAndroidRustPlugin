@@ -4,7 +4,7 @@ A Gradle plugin for building Rust libraries with Cargo for **Android**, **Deskto
 
 [![KMP Build](https://github.com/rodroidslint/GradleAndroidRustPlugin/actions/workflows/kmp-build.yml/badge.svg)](https://github.com/rodroidslint/GradleAndroidRustPlugin/actions/workflows/kmp-build.yml)
 
-## Version 2.1.0
+## Version 2.2.0
 
 ### 🚀 What's New
 
