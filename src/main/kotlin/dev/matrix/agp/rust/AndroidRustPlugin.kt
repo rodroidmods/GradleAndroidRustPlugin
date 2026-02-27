@@ -480,10 +480,29 @@ abstract class AndroidRustPlugin @Inject constructor(
         rustInstallIos.configure { abiSet.set(allIosAbis) }
 
         if (iosBuildTasks.isNotEmpty()) {
-            project.tasks.register("buildIosRust") {
+            val buildIosRustTask = project.tasks.register("buildIosRust") {
                 this.description = "Builds all Rust modules for iOS targets"
                 this.group = "rust"
                 this.dependsOn(iosBuildTasks)
+            }
+
+            project.tasks.matching {
+                it.name.startsWith("link") && it.name.contains("Framework") &&
+                    (it.name.contains("Ios") || it.name.contains("ios"))
+            }.configureEach {
+                dependsOn(buildIosRustTask)
+            }
+
+            project.tasks.matching {
+                it.name.startsWith("cinterop") && (it.name.contains("Ios") || it.name.contains("ios"))
+            }.configureEach {
+                dependsOn(buildIosRustTask)
+            }
+
+            project.tasks.matching {
+                it.name.startsWith("compileKotlin") && (it.name.contains("Ios") || it.name.contains("ios"))
+            }.configureEach {
+                dependsOn(buildIosRustTask)
             }
         }
     }

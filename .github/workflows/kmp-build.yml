@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'Example-KMP-Mobile/**'
+      - 'src/**'
       - '.github/workflows/kmp-build.yml'
   pull_request:
     branches: [main]
     paths:
       - 'Example-KMP-Mobile/**'
+      - 'src/**'
   workflow_dispatch:
 
 jobs:
@@ -90,22 +92,7 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build Rust iOS static libraries
-        working-directory: Example-KMP-Mobile/rust
-        run: |
-          cargo build --release --target aarch64-apple-ios -p rustios
-          cargo build --release --target aarch64-apple-ios-sim -p rustios
-
-      - name: Copy Rust libs to expected output
-        run: |
-          mkdir -p composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios
-          mkdir -p composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios-sim
-          cp rust/target/aarch64-apple-ios/release/librustios.a \
-             composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios/
-          cp rust/target/aarch64-apple-ios-sim/release/librustios.a \
-             composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios-sim/
-
-      - name: Build iOS Framework
+      - name: Build iOS Framework (Rust builds automatically via plugin)
         run: ./gradlew :composeApp:linkReleaseFrameworkIosArm64 --no-daemon
 
       - name: Build iOS App (unsigned)
