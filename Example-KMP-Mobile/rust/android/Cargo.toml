@@ -1,0 +1,12 @@
+[package]
+name = "rustandroid"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rustandroid"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustcore = { path = "../core" }
+jni = { version = "0.21", default-features = false }

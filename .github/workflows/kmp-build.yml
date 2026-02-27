@@ -1,0 +1,128 @@
+name: KMP Build (Android + iOS)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Example-KMP-Mobile/**'
+      - '.github/workflows/kmp-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Example-KMP-Mobile/**'
+  workflow_dispatch:
+
+jobs:
+  android-build:
+    name: Android Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Example-KMP-Mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: sdkmanager "ndk;29.0.14206865"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Android APK
+        run: ./gradlew :androidApp:assembleRelease --no-daemon
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: Example-KMP-Mobile/androidApp/build/outputs/apk/release/*.apk
+
+  ios-build:
+    name: iOS Build
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Example-KMP-Mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Rust iOS static libraries
+        run: |
+          cd rust/ios
+          cargo build --release --target aarch64-apple-ios
+          cargo build --release --target aarch64-apple-ios-sim
+
+      - name: Copy Rust libs to expected output
+        run: |
+          mkdir -p composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios
+          mkdir -p composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios-sim
+          cp rust/ios/target/aarch64-apple-ios/release/librustios.a \
+             composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios/
+          cp rust/ios/target/aarch64-apple-ios-sim/release/librustios.a \
+             composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios-sim/
+
+      - name: Build iOS Framework
+        run: ./gradlew :composeApp:linkReleaseFrameworkIosArm64 --no-daemon
+
+      - name: Build iOS App (unsigned)
+        run: |
+          cd iosApp
+          xcodebuild build \
+            -scheme "iosApp" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Upload iOS Framework
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-framework
+          path: Example-KMP-Mobile/composeApp/build/bin/iosArm64/releaseFramework/
+
+      - name: Upload iOS App
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-app-unsigned
+          path: Example-KMP-Mobile/iosApp/build/Build/Products/Release-iphoneos/
+          if-no-files-found: warn

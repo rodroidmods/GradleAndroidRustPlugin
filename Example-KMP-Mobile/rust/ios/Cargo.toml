@@ -1,0 +1,11 @@
+[package]
+name = "rustios"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rustios"
+crate-type = ["staticlib"]
+
+[dependencies]
+rustcore = { path = "../core" }

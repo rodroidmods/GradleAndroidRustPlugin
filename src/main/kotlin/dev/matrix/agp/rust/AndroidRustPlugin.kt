@@ -1,14 +1,9 @@
 package dev.matrix.agp.rust
 
 import dev.matrix.agp.rust.utils.Abi
+import dev.matrix.agp.rust.utils.AndroidHelper
 import dev.matrix.agp.rust.utils.RustBinaries
 import dev.matrix.agp.rust.utils.SemanticVersion
-import dev.matrix.agp.rust.utils.findApplicationExtension
-import dev.matrix.agp.rust.utils.findLibraryExtension
-import dev.matrix.agp.rust.utils.getAndroidComponentsExtension
-import dev.matrix.agp.rust.utils.getMinSdk
-import dev.matrix.agp.rust.utils.getNdkVersion
-import dev.matrix.agp.rust.utils.hasAndroidPlugin
 import dev.matrix.agp.rust.utils.log
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -24,6 +19,7 @@ abstract class AndroidRustPlugin @Inject constructor(
     override fun apply(project: Project) {
         val rustBinaries = RustBinaries(project)
         val extension = project.extensions.create("androidRust", AndroidRustExtension::class.java)
+        project.extensions.add("Rust", extension)
 
         project.afterEvaluate {
             validateModules(extension)
@@ -52,8 +48,9 @@ abstract class AndroidRustPlugin @Inject constructor(
 
             val extensionBuildDirectory = project.layout.buildDirectory.dir("intermediates/rust").get().asFile
 
-            if (project.hasAndroidPlugin()) {
-                registerAndroidBuildTasks(project, extension, rustBinaries, minimumSupportedRustVersion, extensionBuildDirectory)
+            val androidHelper = AndroidHelper.create(project)
+            if (androidHelper != null && androidHelper.hasAndroidPlugin()) {
+                registerAndroidBuildTasks(project, extension, rustBinaries, minimumSupportedRustVersion, extensionBuildDirectory, androidHelper)
             }
 
             registerDesktopBuildTasks(project, extension, rustBinaries, minimumSupportedRustVersion, extensionBuildDirectory)
@@ -231,8 +228,8 @@ abstract class AndroidRustPlugin @Inject constructor(
         rustBinaries: RustBinaries,
         minimumSupportedRustVersion: SemanticVersion,
         extensionBuildDirectory: File,
+        androidHelper: AndroidHelper,
     ) {
-        val androidComponents = project.getAndroidComponentsExtension()
         val tasksByBuildType = HashMap<String, ArrayList<TaskProvider<RustBuildTask>>>()
 
         val rustInstallBuild = project.tasks.register("rustInstallBuild", RustInstallTask::class.java) {
@@ -243,11 +240,15 @@ abstract class AndroidRustPlugin @Inject constructor(
         }
 
         val allAndroidAbis = mutableSetOf<Abi>()
-        val ndkDirectory = androidComponents.sdkComponents.ndkDirectory.get().asFile
-        val ndkVersion = SemanticVersion(project.getNdkVersion())
-        val minSdk = project.getMinSdk()
+        val ndkDirectory = androidHelper.getNdkDirectory()
+        if (ndkDirectory == null) {
+            log("NDK not found, skipping Android Rust build tasks")
+            return
+        }
+        val ndkVersion = SemanticVersion(androidHelper.getNdkVersion())
+        val minSdk = androidHelper.getMinSdk()
 
-        val buildTypeNames = resolveBuildTypeNames(project)
+        val buildTypeNames = androidHelper.getBuildTypeNames()
 
         for (buildTypeName in buildTypeNames) {
             val buildTypeNameCap = buildTypeName.replaceFirstChar(Char::titlecase)
@@ -311,18 +312,24 @@ abstract class AndroidRustPlugin @Inject constructor(
                 }
             }
 
-            addJniLibsSourceSet(project, buildTypeName, variantJniLibsDirectory)
+            androidHelper.addJniLibsSourceSet(buildTypeName, variantJniLibsDirectory)
         }
 
         rustInstallBuild.configure { abiSet.set(allAndroidAbis) }
 
-        androidComponents.onVariants(androidComponents.selector().all()) { variant ->
-            val tasks = tasksByBuildType[variant.buildType] ?: return@onVariants
-            val variantName = variant.name.replaceFirstChar(Char::titlecase)
+        for ((buildTypeName, tasks) in tasksByBuildType) {
+            val buildTypeNameCap = buildTypeName.replaceFirstChar(Char::titlecase)
 
-            val parentTask = project.tasks.findByName("pre${variantName}Build") ?: return@onVariants
-            for (task in tasks) {
-                parentTask.dependsOn(task)
+            project.tasks.matching { it.name == "pre${buildTypeNameCap}Build" }.configureEach {
+                for (task in tasks) {
+                    dependsOn(task)
+                }
+            }
+
+            project.tasks.matching { it.name == "merge${buildTypeNameCap}NativeLibs" }.configureEach {
+                for (task in tasks) {
+                    dependsOn(task)
+                }
             }
         }
     }
@@ -478,33 +485,6 @@ abstract class AndroidRustPlugin @Inject constructor(
                 this.group = "rust"
                 this.dependsOn(iosBuildTasks)
             }
-        }
-    }
-
-    private fun resolveBuildTypeNames(project: Project): List<String> {
-        val appExtension = project.findApplicationExtension()
-        if (appExtension != null) {
-            return appExtension.buildTypes.map { it.name }
-        }
-
-        val libExtension = project.findLibraryExtension()
-        if (libExtension != null) {
-            return libExtension.buildTypes.map { it.name }
-        }
-
-        return listOf("debug", "release")
-    }
-
-    private fun addJniLibsSourceSet(project: Project, buildTypeName: String, jniLibsDir: File) {
-        val appExtension = project.findApplicationExtension()
-        if (appExtension != null) {
-            appExtension.sourceSets.findByName(buildTypeName)?.jniLibs?.directories?.add(jniLibsDir.path)
-            return
-        }
-
-        val libExtension = project.findLibraryExtension()
-        if (libExtension != null) {
-            libExtension.sourceSets.findByName(buildTypeName)?.jniLibs?.directories?.add(jniLibsDir.path)
         }
     }
 
