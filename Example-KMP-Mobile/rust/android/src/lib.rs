@@ -11,7 +11,7 @@ pub extern "system" fn Java_com_examplemobilekmp_rustrodroid_RustBridge_rustGree
     name: JString<'caller>,
 ) -> jstring {
     unowned_env.with_env(|env| -> jni::errors::Result<_> {
-        let name: String = env.get_string(&name)?.into();
+        let name: String = name.to_string(env)?.into();
         let result = rust_greeting(&name);
         Ok(env.new_string(result)?.into_raw())
     }).resolve::<ThrowRuntimeExAndDefault>()
