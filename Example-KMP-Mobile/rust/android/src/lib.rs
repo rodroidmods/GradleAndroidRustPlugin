@@ -1,24 +1,29 @@
 use jni::objects::{JClass, JString};
 use jni::sys::{jint, jlong, jstring};
-use jni::JNIEnv;
+use jni::errors::ThrowRuntimeExAndDefault;
+use jni::EnvUnowned;
 use rustcore::{fibonacci, rust_greeting};
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_examplemobilekmp_rustrodroid_RustBridge_rustGreeting(
-    mut env: JNIEnv,
-    _class: JClass,
-    name: JString,
+pub extern "system" fn Java_com_examplemobilekmp_rustrodroid_RustBridge_rustGreeting<'caller>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    name: JString<'caller>,
 ) -> jstring {
-    let name: String = env.get_string(&name).expect("Invalid string").into();
-    let result = rust_greeting(&name);
-    env.new_string(result).expect("Failed to create string").into_raw()
+    unowned_env.with_env(|env| -> jni::errors::Result<_> {
+        let name: String = env.get_string(&name)?.into();
+        let result = rust_greeting(&name);
+        Ok(env.new_string(result)?.into_raw())
+    }).resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_examplemobilekmp_rustrodroid_RustBridge_fibonacci(
-    _env: JNIEnv,
-    _class: JClass,
+pub extern "system" fn Java_com_examplemobilekmp_rustrodroid_RustBridge_fibonacci<'caller>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
     n: jint,
 ) -> jlong {
-    fibonacci(n as u32) as jlong
+    unowned_env.with_env(|_env| -> jni::errors::Result<_> {
+        Ok(fibonacci(n as u32) as jlong)
+    }).resolve::<ThrowRuntimeExAndDefault>()
 }

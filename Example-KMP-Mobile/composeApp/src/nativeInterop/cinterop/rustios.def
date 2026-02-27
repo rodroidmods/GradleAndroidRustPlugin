@@ -1,1 +1,2 @@
 headers = rustios.h
+staticLibraries = librustios.a

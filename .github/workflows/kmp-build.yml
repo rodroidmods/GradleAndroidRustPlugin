@@ -61,8 +61,9 @@ jobs:
           path: Example-KMP-Mobile/androidApp/build/outputs/apk/release/*.apk
 
   ios-build:
-    name: iOS Build
+    name: iOS Simulator Build
     runs-on: macos-latest
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: Example-KMP-Mobile
@@ -92,30 +93,32 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build iOS Framework (Rust builds automatically via plugin)
-        run: ./gradlew :composeApp:linkReleaseFrameworkIosArm64 --no-daemon
+      - name: Build iOS Simulator Framework (Rust builds automatically via plugin)
+        run: ./gradlew :composeApp:linkReleaseFrameworkIosSimulatorArm64 --no-daemon
 
-      - name: Build iOS App (unsigned)
+      - name: Build iOS Simulator App
         run: |
           cd iosApp
           xcodebuild build \
             -scheme "iosApp" \
             -configuration Release \
-            -destination 'generic/platform=iOS' \
+            -sdk iphonesimulator \
+            -arch arm64 \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            SKIP_INSTALL=YES
+
+      - name: Upload iOS Simulator App (for Appetize.io)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-app
+          path: Example-KMP-Mobile/iosApp/build/Build/Products/Release-iphonesimulator/*.app
 
       - name: Upload iOS Framework
         uses: actions/upload-artifact@v4
         with:
           name: ios-framework
-          path: Example-KMP-Mobile/composeApp/build/bin/iosArm64/releaseFramework/
-
-      - name: Upload iOS App
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-app-unsigned
-          path: Example-KMP-Mobile/iosApp/build/Build/Products/Release-iphoneos/
-          if-no-files-found: warn
+          path: Example-KMP-Mobile/composeApp/build/bin/iosSimulatorArm64/releaseFramework/

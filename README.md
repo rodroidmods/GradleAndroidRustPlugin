@@ -1,60 +1,19 @@
 # Gradle Android Rust Plugin
 
-A Gradle plugin for building Rust libraries with Cargo for Android, Desktop JVM, and iOS projects with Kotlin Multiplatform (KMP) support.
+A Gradle plugin for building Rust libraries with Cargo for **Android**, **Desktop JVM**, and **iOS** projects with full **Kotlin Multiplatform (KMP)** support.
 
-## Version 2.0.0 - KMP Support
+[![KMP Build](https://github.com/rodroidslint/GradleAndroidRustPlugin/actions/workflows/kmp-build.yml/badge.svg)](https://github.com/rodroidslint/GradleAndroidRustPlugin/actions/workflows/kmp-build.yml)
 
-### 🚀 New in 2.0.0
+## Version 2.1.0
 
-#### **Kotlin Multiplatform Support**
-Build Rust libraries for Desktop JVM and iOS targets alongside Android:
+### 🚀 What's New
 
-```kotlin
-androidRust {
-    module("mylib") {
-        path = file("rust/mylib")
-        targets = listOf(
-            "arm64", "x86_64",                          // Android
-            "desktop-linux-x64", "desktop-windows-x64", // Desktop
-            "desktop-macos-arm64",
-            "ios-arm64", "ios-sim-arm64"                 // iOS
-        )
-    }
-}
-```
-
-#### **Desktop Targets**
-Plain `cargo build --target` (no NDK required). Libraries placed in JVM resources for `System.loadLibrary()` / JNA:
-
-| Target Name | Rust Triple | Output | Resource Path |
-|-------------|-------------|--------|---------------|
-| `desktop-linux-x64` | `x86_64-unknown-linux-gnu` | `.so` | `linux-x86-64/` |
-| `desktop-windows-x64` | `x86_64-pc-windows-msvc` | `.dll` | `win32-x86-64/` |
-| `desktop-macos-x64` | `x86_64-apple-darwin` | `.dylib` | `darwin-x86-64/` |
-| `desktop-macos-arm64` | `aarch64-apple-darwin` | `.dylib` | `darwin-aarch64/` |
-
-#### **iOS Targets**
-Static libraries (`.a`) for Kotlin/Native `cinterop` linking:
-
-| Target Name | Rust Triple | Output |
-|-------------|-------------|--------|
-| `ios-arm64` | `aarch64-apple-ios` | `.a` (Device) |
-| `ios-sim-arm64` | `aarch64-apple-ios-sim` | `.a` (Simulator, Apple Silicon) |
-| `ios-sim-x64` | `x86_64-apple-ios` | `.a` (Simulator, Intel) |
-| `ios-macabi-arm64` | `aarch64-apple-ios-macabi` | `.a` (Mac Catalyst) |
-
-#### **New Build Tasks**
-- `buildDesktopRust` — Builds all Rust modules for all desktop targets
-- `buildIosRust` — Builds all Rust modules for all iOS targets
-- `build<Module>DesktopRust[<target>]` — Build specific desktop target
-- `build<Module>IosRust[<target>]` — Build specific iOS target
-
-#### **Separate Install Tasks**
-- `rustInstallDesktop` — Installs desktop target triples (no cargo-ndk)
-- `rustInstallIos` — Installs iOS target triples (no cargo-ndk)
-
-#### **AGP 9.0.0 Support**
-Fully compatible with Android Gradle Plugin 9.0.0 and Gradle 9.3.0.
+- **`Rust {}` DSL** — New top-level extension alongside `androidRust {}` for cleaner configuration
+- **Automatic iOS lifecycle hooking** — iOS Rust builds run automatically before `linkFramework`, `cinterop`, and `compileKotlinIos` tasks
+- **Automatic Android lifecycle hooking** — Rust builds hook into `preBuild` and `mergeNativeLibs` via lazy task matching (works with AGP 9.0+)
+- **AGP 9.0.1 + Gradle 9.3.1** — Fully compatible with the latest Android Gradle Plugin
+- **KMP library support** — Works with `com.android.kotlin.multiplatform.library` modules
+- **Independent NDK discovery** — Falls back to `local.properties` → `sdk.dir` → `ndk/` for KMP library modules
 
 ---
 
@@ -64,7 +23,102 @@ The plugin is available on Gradle Plugin Portal: https://plugins.gradle.org/plug
 
 ```kotlin
 plugins {
-    id("io.github.rodroidmods.android-rust") version "2.0.0"
+    id("io.github.rodroidmods.android-rust") version "2.2.0"
+}
+```
+
+---
+
+## Quick Start
+
+### Android Only (Jetpack Compose)
+
+```kotlin
+plugins {
+    id("com.android.application")
+    id("io.github.rodroidmods.android-rust")
+}
+
+Rust {
+    module("mylib") {
+        path = file("rust/mylib")
+        targets = listOf("arm64", "x86_64")
+    }
+}
+```
+
+### KMP Mobile (Android + iOS)
+
+**Architecture**: Split into two modules for AGP 9.0 compatibility:
+
+```
+project/
+├── androidApp/          # com.android.application — Android Rust (.so)
+├── composeApp/          # com.android.kotlin.multiplatform.library — iOS Rust (.a)
+└── rust/
+    ├── Cargo.toml       # Workspace
+    ├── core/            # Shared Rust logic
+    ├── android/         # JNI bindings (cdylib)
+    └── ios/             # C-ABI bindings (staticlib)
+        └── include/
+            └── rustios.h  # C header for cinterop
+```
+
+**`androidApp/build.gradle.kts`** — Builds Android Rust:
+
+```kotlin
+plugins {
+    alias(libs.plugins.androidApplication)
+    alias(libs.plugins.composeCompiler)
+    id("io.github.rodroidmods.android-rust")
+}
+
+Rust {
+    module("rustandroid") {
+        path = file("../rust/android")
+        targets = listOf("arm64", "x86_64")
+    }
+}
+```
+
+**`composeApp/build.gradle.kts`** — Builds iOS Rust with cinterop:
+
+```kotlin
+plugins {
+    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.composeCompiler)
+    id("com.android.kotlin.multiplatform.library")
+    id("io.github.rodroidmods.android-rust")
+}
+
+kotlin {
+    val rustIosOutputDir = layout.buildDirectory.dir("intermediates/rust/ios/output").get().asFile
+    val rustHeaderDir = rootProject.file("rust/ios/include")
+
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "ComposeApp"
+            isStatic = false
+            linkerOpts("-L${rustIosOutputDir.resolve(iosTarget.name.mapToRustTarget())}", "-lrustios")
+        }
+
+        iosTarget.compilations.getByName("main") {
+            cinterops {
+                val rustios by creating {
+                    defFile(project.file("src/nativeInterop/cinterop/rustios.def"))
+                    includeDirs(rustHeaderDir)
+                }
+            }
+        }
+    }
+}
+
+Rust {
+    module("rustios") {
+        path = file("../rust/ios")
+        targets = listOf("ios-arm64", "ios-sim-arm64")
+    }
 }
 ```
 
@@ -72,13 +126,15 @@ plugins {
 
 ## Configuration
 
-### Android Only
+### `Rust {}` DSL (Recommended)
 
 ```kotlin
-androidRust {
-    module("library") {
-        path = file("../rust/mylib")
-        targets = listOf("arm", "arm64", "x86", "x86_64")
+Rust {
+    minimumSupportedRustVersion = "1.70.0"
+
+    module("mylib") {
+        path = file("rust/mylib")
+        targets = listOf("arm64", "x86_64", "ios-arm64", "ios-sim-arm64")
 
         buildType("debug") {
             profile = "dev"
@@ -92,104 +148,18 @@ androidRust {
 }
 ```
 
-### Android + Desktop (KMP)
+### `androidRust {}` DSL (Legacy, still supported)
 
 ```kotlin
 androidRust {
     module("mylib") {
         path = file("rust/mylib")
-        targets = listOf(
-            "arm64", "x86_64",
-            "desktop-linux-x64", "desktop-windows-x64", "desktop-macos-arm64"
-        )
-    }
-}
-```
-
-### Android + iOS (KMP)
-
-```kotlin
-androidRust {
-    module("mylib") {
-        path = file("rust/mylib")
-        targets = listOf(
-            "arm64", "x86_64",
-            "ios-arm64", "ios-sim-arm64"
-        )
-    }
-}
-```
-
-### Full KMP (Android + Desktop + iOS)
-
-```kotlin
-androidRust {
-    module("mylib") {
-        path = file("rust/mylib")
-        targets = listOf(
-            "arm64", "x86_64",
-            "desktop-linux-x64", "desktop-windows-x64", "desktop-macos-arm64",
-            "ios-arm64", "ios-sim-arm64"
-        )
-    }
-}
-```
-
-### Multiple Modules
-
-```kotlin
-androidRust {
-    minimumSupportedRustVersion = "1.70.0"
-
-    module("core") {
-        path = file("src/main/rust/core")
-        targets = listOf("arm64", "x86_64", "desktop-linux-x64", "ios-arm64")
-
-        buildType("release") {
-            runTests = true
-            clippyDenyWarnings = true
-        }
-    }
-
-    module("audio") {
-        path = file("src/main/rust/audio")
-        targets = listOf("arm64", "x86_64", "arm", "x86")
-    }
-
-    module("network") {
-        path = file("src/main/rust/network")
         targets = listOf("arm64", "x86_64")
-        cargoClean = true
     }
 }
 ```
 
-### Advanced Options
-
-```kotlin
-androidRust {
-    minimumSupportedRustVersion = "1.70.0"
-
-    module("library") {
-        path = file("../rust/mylib")
-        targets = listOf("arm64")
-        runTests = true
-        disableAbiOptimization = false
-
-        buildType("debug") {
-            profile = "dev"
-        }
-
-        buildType("release") {
-            profile = "release"
-        }
-    }
-}
-```
-
----
-
-## Configuration Options
+### Configuration Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -235,44 +205,73 @@ androidRust {
 
 ---
 
-## Cargo.toml Requirements
+## iOS Cinterop Setup
 
-### Android Only
-```toml
-[lib]
-crate-type = ["cdylib"]
+To use Rust from Kotlin/Native on iOS, you need:
+
+### 1. C Header (`rust/ios/include/rustios.h`)
+
+```c
+#ifndef RUSTIOS_H
+#define RUSTIOS_H
+
+#include <stdint.h>
+
+char* rust_greeting_c(const char* name);
+void rust_greeting_free(char* s);
+uint64_t fibonacci_c(uint32_t n);
+
+#endif
 ```
 
-### Android + Desktop
-```toml
-[lib]
-crate-type = ["cdylib"]
+### 2. Cinterop Definition (`composeApp/src/nativeInterop/cinterop/rustios.def`)
+
+```
+headers = rustios.h
 ```
 
-### Android + iOS (or all platforms)
-```toml
-[lib]
-crate-type = ["cdylib", "staticlib"]
+### 3. iOS Kotlin Bridge (`composeApp/src/iosMain/kotlin/.../RustBridge.ios.kt`)
+
+```kotlin
+@OptIn(ExperimentalForeignApi::class)
+actual object RustBridge {
+    actual fun rustGreeting(name: String): String {
+        val result = rust_greeting_c(name)
+        val greeting = result?.toKString() ?: "Unknown"
+        rust_greeting_free(result)
+        return greeting
+    }
+
+    actual fun fibonacci(n: Int): Long {
+        return fibonacci_c(n.toUInt()).toLong()
+    }
+}
 ```
 
-iOS requires `staticlib` to produce `.a` static libraries for Kotlin/Native `cinterop`.
+### 4. Cargo.toml (iOS crate)
+
+```toml
+[lib]
+crate-type = ["staticlib"]
+```
 
 ---
 
 ## Build Tasks
 
 ### Android
-- `clean<BuildType>RustJniLibs` — Clean Rust build artifacts
-- `test<Module>Rust` — Run Rust tests (if enabled)
 - `build<BuildType><Module>Rust[<ABI>]` — Build specific ABI
+- `clean<BuildType>RustJniLibs` — Clean Rust build artifacts
+
+### iOS
+- `buildIosRust` — Build all Rust modules for all iOS targets
+- `build<Module>IosRust[<target>]` — Build specific iOS target
+
+> iOS build tasks **automatically run** before `linkFramework`, `cinterop`, and `compileKotlinIos` tasks.
 
 ### Desktop
 - `buildDesktopRust` — Build all desktop targets
 - `build<Module>DesktopRust[<target>]` — Build specific desktop target
-
-### iOS
-- `buildIosRust` — Build all iOS targets
-- `build<Module>IosRust[<target>]` — Build specific iOS target
 
 ### Tooling
 - `cargoAdd` / `cargoAdd<Module>` — Add a Cargo dependency
@@ -291,81 +290,42 @@ iOS requires `staticlib` to produce `.a` static libraries for Kotlin/Native `cin
 - `rustInstallClippy` — Install clippy
 - `rustInstallRustfmt` — Install rustfmt
 
-### Example Commands
-
-```bash
-./gradlew cargoAdd --dependency serde --features derive
-./gradlew cargoClippy
-./gradlew cargoFmt
-./gradlew cargoFmtCheck
-./gradlew cargoCheck
-./gradlew cargoDoc
-./gradlew buildDesktopRust
-./gradlew buildIosRust
-```
-
 ---
 
 ## Output Paths
 
-### Android
-`.so` files → `build/intermediates/rust/<buildType>/jniLibs/<abi>/`
-
-### Desktop
-Libraries → `build/intermediates/rust/desktop/resources/<platform-arch>/`
-
-| Platform | Path |
-|----------|------|
-| Linux x64 | `linux-x86-64/libmylib.so` |
-| Windows x64 | `win32-x86-64/mylib.dll` |
-| macOS x64 | `darwin-x86-64/libmylib.dylib` |
-| macOS arm64 | `darwin-aarch64/libmylib.dylib` |
-
-### iOS
-Static libraries → `build/intermediates/rust/ios/output/<target>/`
+| Platform | Output Path |
+|----------|-------------|
+| Android | `build/intermediates/rust/<buildType>/jniLibs/<abi>/lib*.so` |
+| Desktop | `build/intermediates/rust/desktop/resources/<platform-arch>/lib*` |
+| iOS | `build/intermediates/rust/ios/output/<target-triple>/lib*.a` |
 
 ---
 
 ## Requirements
 
-- Android Gradle Plugin 9.0+ (for Android targets)
-- Gradle 9.0+
-- Rust toolchain (auto-installed if missing)
-- cargo-ndk (auto-installed for Android targets)
-- Android NDK (install via Android Studio SDK Manager, for Android targets)
+- **Android Gradle Plugin** 9.0+ (for Android targets)
+- **Gradle** 9.0+
+- **Rust toolchain** (auto-installed if missing)
+- **cargo-ndk** (auto-installed for Android targets)
+- **Android NDK** (install via Android Studio SDK Manager)
 
 ---
 
-## Custom Rust Binary Paths
+## Example Project
 
-If you have Rust installed in a custom location, create `local.properties`:
-
-```properties
-cargo.bin=/custom/path/to/cargo/bin
-```
-
----
-
-## Gradle Build Cache
+See [`Example-KMP-Mobile/`](Example-KMP-Mobile/) for a complete KMP project with:
+- Android app with Rust JNI bindings
+- iOS app with Rust via cinterop
+- Shared Compose Multiplatform UI
+- CI/CD via GitHub Actions
 
 ```bash
-./gradlew build --build-cache
-```
+# Build Android
+./gradlew :androidApp:assembleRelease
 
-Or add to `gradle.properties`:
-```properties
-org.gradle.caching=true
-```
-
-## Parallel Builds
-
-```bash
-./gradlew build --parallel
-```
-
-Or add to `gradle.properties`:
-```properties
-org.gradle.parallel=true
+# Build iOS framework (Rust builds automatically)
+./gradlew :composeApp:linkReleaseFrameworkIosSimulatorArm64
 ```
 
 ---
@@ -378,30 +338,37 @@ The plugin auto-installs cargo-ndk for Android targets. If issues persist:
 cargo install cargo-ndk
 ```
 
-If Rust is not found, add `cargo.bin` path in `local.properties`.
-
 #### NDK not found
 Install NDK via Android Studio: Tools → SDK Manager → SDK Tools → NDK (Side by side)
 
+#### iOS: undefined symbols in Xcode
+Use `isStatic = false` (dynamic framework) so Rust symbols are embedded:
+```kotlin
+iosTarget.binaries.framework {
+    isStatic = false  // Embeds Rust symbols into framework
+    linkerOpts("-L${rustOutputDir}", "-lrustios")
+}
+```
+
 #### Library not found when running from Android Studio
 ```kotlin
-androidRust {
+Rust {
     module("library") {
         disableAbiOptimization = true
     }
 }
 ```
 
-#### Windows: rustup installation fails
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
 #### iOS: no .a files produced
 Ensure your `Cargo.toml` includes `staticlib`:
 ```toml
 [lib]
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["staticlib"]
+```
+
+#### Windows: rustup installation fails
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
 ---

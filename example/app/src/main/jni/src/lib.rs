@@ -1,14 +1,16 @@
 use jni::sys::jstring;
-use jni::{JNIEnv, objects::JObject};
+use jni::objects::JObject;
+use jni::errors::ThrowRuntimeExAndDefault;
+use jni::EnvUnowned;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn Java_dev_rodroid_rust_MainActivity_callRustCode(
-    env: JNIEnv,
-    _: JObject,
+pub extern "C" fn Java_dev_rodroid_rust_MainActivity_callRustCode<'caller>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _: JObject<'caller>,
 ) -> jstring {
-    let message = "Hello from Rust";
-    let java_string = env
-        .new_string(message)
-        .expect("Couldn't create java string!");
-    java_string.into_raw()
+    unowned_env.with_env(|env| -> jni::errors::Result<_> {
+        let message = "Hello from Rust";
+        let java_string = env.new_string(message)?;
+        Ok(java_string.into_raw())
+    }).resolve::<ThrowRuntimeExAndDefault>()
 }

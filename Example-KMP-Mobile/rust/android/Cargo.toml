@@ -1,7 +1,7 @@
 [package]
 name = "rustandroid"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "rustandroid"
@@ -9,4 +9,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 rustcore = { path = "../core" }
-jni = { version = "0.21", default-features = false }
+jni = { version = "0.22", default-features = false }

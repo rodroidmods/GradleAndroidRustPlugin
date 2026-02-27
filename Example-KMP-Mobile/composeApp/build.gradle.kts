@@ -25,7 +25,6 @@ kotlin {
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
-            linkerOpts("-L${rustIosOutputDir.resolve(iosTarget.name.mapToRustTarget())}", "-lrustios")
         }
 
         iosTarget.compilations.getByName("main") {
@@ -33,6 +32,7 @@ kotlin {
                 val rustios by creating {
                     defFile(project.file("src/nativeInterop/cinterop/rustios.def"))
                     includeDirs(rustHeaderDir)
+                    extraOpts("-libraryPath", rustIosOutputDir.resolve(iosTarget.name.mapToRustTarget()).absolutePath)
                 }
             }
         }
