@@ -453,7 +453,7 @@ abstract class AndroidRustPlugin @Inject constructor(
 
             for (iosAbi in iosAbis) {
                 val buildTaskName = "build${moduleNameCap}IosRust[${iosAbi.rustName}]"
-                val outputDir = File(iosOutputDirectory, iosAbi.rustName)
+                val outputDir = File(iosOutputDirectory, iosAbi.rustTargetTriple)
 
                 val buildTask = project.tasks.register(buildTaskName, IosBuildTask::class.java) {
                     this.rustBinaries.set(rustBinaries)

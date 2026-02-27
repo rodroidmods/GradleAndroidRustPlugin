@@ -125,7 +125,7 @@ internal abstract class IosBuildTask : DefaultTask() {
             return
         }
 
-        val outputDir = File(iosOutputDirectory, abi.rustName)
+        val outputDir = File(iosOutputDirectory, abi.rustTargetTriple)
         outputDir.mkdirs()
 
         val staticLibFiles = targetOutputDir.listFiles { file ->
