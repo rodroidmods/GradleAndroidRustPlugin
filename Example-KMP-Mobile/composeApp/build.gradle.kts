@@ -5,7 +5,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     id("com.android.kotlin.multiplatform.library")
-    id("io.github.rodroidmods.android-rust")
+    alias(libs.plugins.androidRust)
 }
 
 kotlin {

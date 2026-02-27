@@ -2,7 +2,6 @@ rootProject.name = "Example-KMP-Mobile"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {
-    includeBuild("..")
     repositories {
         google {
             mavenContent {

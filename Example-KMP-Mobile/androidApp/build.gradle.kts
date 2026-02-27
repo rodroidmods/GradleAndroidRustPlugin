@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeCompiler)
-    id("io.github.rodroidmods.android-rust")
+    alias(libs.plugins.androidRust)
 }
 
 android {
