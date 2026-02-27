@@ -46,6 +46,9 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Build Android APK
         run: ./gradlew :androidApp:assembleRelease --no-daemon
 
@@ -84,19 +87,22 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Build Rust iOS static libraries
+        working-directory: Example-KMP-Mobile/rust
         run: |
-          cd rust/ios
-          cargo build --release --target aarch64-apple-ios
-          cargo build --release --target aarch64-apple-ios-sim
+          cargo build --release --target aarch64-apple-ios -p rustios
+          cargo build --release --target aarch64-apple-ios-sim -p rustios
 
       - name: Copy Rust libs to expected output
         run: |
           mkdir -p composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios
           mkdir -p composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios-sim
-          cp rust/ios/target/aarch64-apple-ios/release/librustios.a \
+          cp rust/target/aarch64-apple-ios/release/librustios.a \
              composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios/
-          cp rust/ios/target/aarch64-apple-ios-sim/release/librustios.a \
+          cp rust/target/aarch64-apple-ios-sim/release/librustios.a \
              composeApp/build/intermediates/rust/ios/output/aarch64-apple-ios-sim/
 
       - name: Build iOS Framework
